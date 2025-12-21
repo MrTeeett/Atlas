@@ -1,0 +1,23 @@
+input,button,select{border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); padding:8px 10px;}
+button{background:var(--accent); border-color:#3a64df; font-weight:650; cursor:pointer;}
+button.secondary{background:var(--surface);}
+button.danger{background:var(--danger); border-color:#e04461;}
+.mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+.terminal{height:420px; overflow:auto; background:var(--terminal-bg); border:1px solid var(--terminal-border); border-radius:12px; padding:10px; white-space:pre-wrap;}
+.path{color:var(--muted2); font-size:12px;}
+.pill{padding:6px 10px; border-radius:999px; border:1px solid var(--border); background:var(--surface); color:var(--muted2); font-size:12px;}
+
+.iconbtn{width:38px; height:34px; display:inline-flex; align-items:center; justify-content:center; padding:0; border-radius:10px; background:var(--surface); border:1px solid var(--border); cursor:pointer;}
+.iconbtn:hover{background:var(--panel2);}
+.iconbtn:disabled{opacity:.5; cursor:not-allowed;}
+.iconbtn svg{width:18px; height:18px; fill:var(--text); opacity:.92;}
+
+.cm{position:fixed; z-index:1000; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:6px; min-width:180px; max-height:calc(100vh - 16px); overflow:auto; box-shadow:var(--shadow);}
+.cm button{width:100%; text-align:left; background:transparent; border:1px solid transparent; padding:8px 10px; border-radius:10px; color:var(--text); cursor:pointer;}
+.cm button:hover{background:var(--hover); border-color:var(--terminal-border);}
+.cm hr{border:0; border-top:1px solid var(--terminal-border); margin:6px 4px;}
+
+.modal{position:fixed; inset:0; z-index:1100; background:var(--modal-backdrop); display:flex; align-items:center; justify-content:center; padding:14px;}
+.modal .card{width:min(980px, 94vw);}
+.modal .terminal{height:min(70vh, 560px);}
+.editor{width:100%; height:min(70vh, 560px); resize:vertical; padding:10px 12px; border-radius:12px; border:1px solid var(--terminal-border); background:var(--terminal-bg); color:var(--text); font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; font-size:13px; line-height:1.45;}

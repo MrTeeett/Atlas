@@ -1,0 +1,16 @@
+{
+  "go.useLanguageServer": true,
+  "go.toolsManagement.autoUpdate": true,
+  "go.testFlags": ["./..."],
+  "go.testEnvVars": {
+    "GOCACHE": "${workspaceFolder}/.gocache"
+  },
+  "go.toolsEnvVars": {
+    "GOCACHE": "${workspaceFolder}/.gocache"
+  },
+  "cSpell.language": "en, ru",
+  "files.exclude": {
+    "**/.gocache": true
+  }
+}
+

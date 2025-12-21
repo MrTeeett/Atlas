@@ -1,0 +1,17 @@
+{
+  "listen": "127.0.0.1:56200",
+  "root": "/",
+  "base_path": "/cd3acdc1f33d04f58ff22836",
+  "cookie_secure": false,
+  "enable_exec": true,
+  "enable_firewall": true,
+  "enable_admin_actions": true,
+  "service_name": "atlas.service",
+  "fs_sudo": true,
+  "fs_users": [
+    "*"
+  ],
+  "master_key_file": "/home/mrteeett/Project/Atlas/atlas.master.key",
+  "user_db_path": "/home/mrteeett/Project/Atlas/atlas.users.db",
+  "firewall_db_path": "/home/mrteeett/Project/Atlas/atlas.firewall.db"
+}

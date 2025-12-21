@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Atlas</title>
+  <link rel="stylesheet" href="assets/css/vars.css"/>
+  <link rel="stylesheet" href="assets/css/base.css"/>
+  <link rel="stylesheet" href="assets/css/layout.css"/>
+  <link rel="stylesheet" href="assets/css/components.css"/>
+  <link rel="stylesheet" href="assets/css/files.css"/>
+  <link rel="stylesheet" href="assets/css/processes.css"/>
+  <link rel="stylesheet" href="assets/css/monitor.css"/>
+  <link rel="stylesheet" href="assets/css/terminal.css"/>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Atlas</div>
+    <nav class="tabs" id="tabs"></nav>
+    <div class="right">
+      <span class="user" id="me"></span>
+      <a class="link" id="logoutLink" href="logout">Logout</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="view"></section>
+  </main>
+
+  <script type="module" src="assets/app/main.js"></script>
+</body>
+</html>

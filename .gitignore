@@ -1,0 +1,4 @@
+.gocache/
+/atlas
+atlas.master.key
+atlas.users.db

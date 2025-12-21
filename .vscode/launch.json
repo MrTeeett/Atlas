@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Atlas: Debug",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/atlas",
+      "args": ["-config", "${workspaceFolder}/atlas.json"],
+      "env": {
+        "GOCACHE": "${workspaceFolder}/.gocache"
+      }
+    },
+    {
+      "name": "Atlas: Debug (exec enabled)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/atlas",
+      "args": ["-config", "${workspaceFolder}/atlas.json"],
+      "env": {
+        "GOCACHE": "${workspaceFolder}/.gocache"
+      }
+    }
+  ]
+}
