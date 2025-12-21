@@ -35,9 +35,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/install.sh" && -f "${SCRIPT_DIR}/../go.mod" ]]; then
-  exec "${SCRIPT_DIR}/install.sh" "${PASS[@]}"
+# If executed from a checked-out repo (not via pipe), run the local installer.
+SCRIPT_SRC="${BASH_SOURCE[0]:-}"
+if [[ -n "${SCRIPT_SRC}" && -f "${SCRIPT_SRC}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_SRC}")" && pwd)"
+  if [[ -f "${SCRIPT_DIR}/install.sh" && -f "${SCRIPT_DIR}/../go.mod" ]]; then
+    exec "${SCRIPT_DIR}/install.sh" "${PASS[@]}"
+  fi
 fi
 
 need() {
@@ -79,4 +83,3 @@ if [[ -z "${root}" || ! -f "${root}/deploy/install.sh" ]]; then
 fi
 
 exec "${root}/deploy/install.sh" "${PASS[@]}"
-

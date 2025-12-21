@@ -206,7 +206,8 @@ fi
 mkdir -p "${REPO_ROOT}/.gocache"
 (
   cd "${REPO_ROOT}"
-  GOCACHE="${REPO_ROOT}/.gocache" go build -trimpath -ldflags="-s -w" -o "${BIN_PATH}" ./cmd/atlas
+  # Build without CGO to avoid requiring a compiler/libc headers on minimal servers.
+  GOCACHE="${REPO_ROOT}/.gocache" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "${BIN_PATH}" ./cmd/atlas
 )
 chmod 0755 "${BIN_PATH}" || true
 
