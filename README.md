@@ -24,6 +24,20 @@ The script builds the binary, generates a random `port`/`base_path`/`password` b
 ./deploy/install.sh
 ```
 
+## One-command install (from GitHub)
+
+Requirements: `bash`, `tar`, `go`, plus `curl` or `wget`.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MrTeeett/Atlas/main/deploy/remote_install.sh | bash
+```
+
+You can pass arguments through to the installer, for example:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MrTeeett/Atlas/main/deploy/remote_install.sh | bash -s -- --dir /opt/atlas --fresh
+```
+
 If you need to recreate the config/keys/users DB in the install directory:
 
 ```bash
