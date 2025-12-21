@@ -13,8 +13,10 @@ import (
 )
 
 type adminTLSRequest struct {
-	CertPEM string `json:"cert_pem"`
-	KeyPEM  string `json:"key_pem"`
+	CertPEM  string `json:"cert_pem,omitempty"`
+	KeyPEM   string `json:"key_pem,omitempty"`
+	CertPath string `json:"cert_path,omitempty"`
+	KeyPath  string `json:"key_path,omitempty"`
 }
 
 type adminTLSResponse struct {
@@ -37,16 +39,6 @@ func (s *Server) HandleAdminTLS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	certPEM := strings.TrimSpace(req.CertPEM)
-	keyPEM := strings.TrimSpace(req.KeyPEM)
-	if certPEM == "" || keyPEM == "" {
-		http.Error(w, "cert_pem and key_pem are required", http.StatusBadRequest)
-		return
-	}
-	if _, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM)); err != nil {
-		http.Error(w, "bad certificate/key pair: "+err.Error(), http.StatusBadRequest)
-		return
-	}
 
 	// Load config (to preserve other fields) and update TLS paths.
 	path := filepath.Clean(s.cfg.ConfigPath)
@@ -57,31 +49,77 @@ func (s *Server) HandleAdminTLS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfgDir := filepath.Dir(path)
-	certFile := strings.TrimSpace(cfg.TLSCertFile)
-	keyFile := strings.TrimSpace(cfg.TLSKeyFile)
-	if certFile == "" {
-		certFile = "atlas.tls.crt"
-	}
-	if keyFile == "" {
-		keyFile = "atlas.tls.key"
-	}
+	// Mode 1: set paths to existing cert/key files.
+	certPath := strings.TrimSpace(req.CertPath)
+	keyPath := strings.TrimSpace(req.KeyPath)
+	if certPath != "" || keyPath != "" {
+		if certPath == "" || keyPath == "" {
+			http.Error(w, "cert_path and key_path are required", http.StatusBadRequest)
+			return
+		}
+		if !filepath.IsAbs(certPath) || !filepath.IsAbs(keyPath) {
+			http.Error(w, "cert_path and key_path must be absolute paths", http.StatusBadRequest)
+			return
+		}
+		certPath = filepath.Clean(certPath)
+		keyPath = filepath.Clean(keyPath)
+		certBytes, err := os.ReadFile(certPath)
+		if err != nil {
+			http.Error(w, "read cert_path: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		keyBytes, err := os.ReadFile(keyPath)
+		if err != nil {
+			http.Error(w, "read key_path: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if _, err := tls.X509KeyPair(certBytes, keyBytes); err != nil {
+			http.Error(w, "bad certificate/key pair: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	certAbs := resolveInDir(cfgDir, certFile)
-	keyAbs := resolveInDir(cfgDir, keyFile)
+		cfg.TLSCertFile = certPath
+		cfg.TLSKeyFile = keyPath
+		cfg.CookieSecure = true
+	} else {
+		// Mode 2: save provided PEM to files and point config to them.
+		certPEM := strings.TrimSpace(req.CertPEM)
+		keyPEM := strings.TrimSpace(req.KeyPEM)
+		if certPEM == "" || keyPEM == "" {
+			http.Error(w, "cert_pem and key_pem are required", http.StatusBadRequest)
+			return
+		}
+		if _, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM)); err != nil {
+			http.Error(w, "bad certificate/key pair: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	if err := writeFileAtomic(certAbs, []byte(certPEM+"\n"), 0o600); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := writeFileAtomic(keyAbs, []byte(keyPEM+"\n"), 0o600); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+		certFile := strings.TrimSpace(cfg.TLSCertFile)
+		keyFile := strings.TrimSpace(cfg.TLSKeyFile)
+		if certFile == "" {
+			certFile = "atlas.tls.crt"
+		}
+		if keyFile == "" {
+			keyFile = "atlas.tls.key"
+		}
 
-	// Prefer storing relative paths when files are in the config directory.
-	cfg.TLSCertFile = relIfInDir(cfgDir, certAbs)
-	cfg.TLSKeyFile = relIfInDir(cfgDir, keyAbs)
-	cfg.CookieSecure = true
+		certAbs := resolveInDir(cfgDir, certFile)
+		keyAbs := resolveInDir(cfgDir, keyFile)
+
+		if err := writeFileAtomic(certAbs, []byte(certPEM+"\n"), 0o600); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := writeFileAtomic(keyAbs, []byte(keyPEM+"\n"), 0o600); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Prefer storing relative paths when files are in the config directory.
+		cfg.TLSCertFile = relIfInDir(cfgDir, certAbs)
+		cfg.TLSKeyFile = relIfInDir(cfgDir, keyAbs)
+		cfg.CookieSecure = true
+	}
 
 	// Persist updated config. Requires restart to apply.
 	b, err := json.MarshalIndent(cfg, "", "  ")

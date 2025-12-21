@@ -133,6 +133,121 @@ func TestAdminTLSWritesFilesAndUpdatesConfig(t *testing.T) {
 	}
 }
 
+func TestAdminTLSSetPathsUpdatesConfig(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "atlas.json")
+
+	fileCfg := config.Config{
+		Listen:        "127.0.0.1:1234",
+		Root:          "/",
+		BasePath:      "/x",
+		ServiceName:   "atlas.service",
+		MasterKeyFile: filepath.Join(dir, "atlas.master.key"),
+		UserDBPath:    filepath.Join(dir, "atlas.users.db"),
+		FWDBPath:      filepath.Join(dir, "atlas.firewall.db"),
+	}
+	b, _ := json.MarshalIndent(fileCfg, "", "  ")
+	if err := os.WriteFile(cfgPath, append(b, '\n'), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	masterKey, err := config.EnsureMasterKeyFile(fileCfg.MasterKeyFile)
+	if err != nil {
+		t.Fatalf("EnsureMasterKeyFile: %v", err)
+	}
+	store, err := userdb.Open(fileCfg.UserDBPath, masterKey)
+	if err != nil {
+		t.Fatalf("userdb.Open: %v", err)
+	}
+	if err := store.UpsertUser("admin", "pw"); err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	if err := store.SetPermissions("admin", "admin", true, true, true, true, true, nil); err != nil {
+		t.Fatalf("SetPermissions: %v", err)
+	}
+
+	sessionSecret := sha256.Sum256(append(append([]byte{}, masterKey...), []byte("atlas:session:v1")...))
+	srv, err := New(Config{
+		RootDir:    fileCfg.Root,
+		BasePath:   "/x",
+		AuthStore:  store,
+		Secret:     sessionSecret[:],
+		ConfigPath: cfgPath,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	h := srv.Handler()
+
+	// Login.
+	form := url.Values{}
+	form.Set("user", "admin")
+	form.Set("pass", "pw")
+	r := httptest.NewRequest(http.MethodPost, "http://example/x/login", strings.NewReader(form.Encode()))
+	r.Header.Set("content-type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	cookie := strings.Split(w.Header().Get("Set-Cookie"), ";")[0]
+	if cookie == "" {
+		t.Fatalf("expected cookie")
+	}
+
+	// CSRF
+	r = httptest.NewRequest(http.MethodGet, "http://example/x/api/me", nil)
+	r.Header.Set("Cookie", cookie)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	var me struct {
+		CSRF string `json:"csrf"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &me)
+	if me.CSRF == "" {
+		t.Fatalf("expected csrf")
+	}
+
+	certPEM, keyPEM := genSelfSignedKeypair(t)
+	certPath := filepath.Join(dir, "fullchain.pem")
+	keyPath := filepath.Join(dir, "privkey.pem")
+	if err := os.WriteFile(certPath, []byte(certPEM), 0o644); err != nil {
+		t.Fatalf("WriteFile cert: %v", err)
+	}
+	if err := os.WriteFile(keyPath, []byte(keyPEM), 0o600); err != nil {
+		t.Fatalf("WriteFile key: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]string{"cert_path": certPath, "key_path": keyPath})
+	r = httptest.NewRequest(http.MethodPost, "http://example/x/api/admin/tls", bytes.NewReader(reqBody))
+	r.Header.Set("content-type", "application/json")
+	r.Header.Set("Cookie", cookie)
+	r.Header.Set("X-Atlas-CSRF", me.CSRF)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+	}
+
+	cfg2, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg2.TLSCertFile != certPath || cfg2.TLSKeyFile != keyPath {
+		t.Fatalf("expected tls files set to paths, got cert=%q key=%q", cfg2.TLSCertFile, cfg2.TLSKeyFile)
+	}
+	if !cfg2.CookieSecure {
+		t.Fatalf("expected cookie_secure=true")
+	}
+
+	// Must not create default atlas.tls.* files.
+	if _, err := os.Stat(filepath.Join(dir, "atlas.tls.crt")); err == nil {
+		t.Fatalf("unexpected atlas.tls.crt created")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "atlas.tls.key")); err == nil {
+		t.Fatalf("unexpected atlas.tls.key created")
+	}
+}
+
 func genSelfSignedKeypair(t *testing.T) (certPEM, keyPEM string) {
 	t.Helper()
 

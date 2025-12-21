@@ -59,6 +59,9 @@ export async function renderSettings(root) {
       current = await api("api/admin/config");
     } catch {}
 
+    const certPath = el("input", { class: "mono", placeholder: "/etc/ssl/.../fullchain.pem", style: "width:100%;" });
+    const keyPath = el("input", { class: "mono", placeholder: "/etc/ssl/.../privkey.pem", style: "width:100%;" });
+
     const cert = el("textarea", { class: "editor mono", style: "height:160px; min-height:160px;" });
     const key = el("textarea", { class: "editor mono", style: "height:160px; min-height:160px; margin-top:10px;" });
     const status = el("div", { class: "path", style: "margin-top:10px;" },
@@ -69,9 +72,22 @@ export async function renderSettings(root) {
 
     const btnEnable = el("button", {
       onclick: async () => {
+        const cp = (certPath.value || "").trim();
+        const kp = (keyPath.value || "").trim();
         const certPem = (cert.value || "").trim();
         const keyPem = (key.value || "").trim();
-        if (!certPem || !keyPem) {
+
+        const usingPaths = !!(cp || kp);
+        if (usingPaths) {
+          if (!cp || !kp) {
+            alert(t("settings.httpsPathsRequired"));
+            return;
+          }
+          if (!cp.startsWith("/") || !kp.startsWith("/")) {
+            alert(t("settings.httpsPathsAbs"));
+            return;
+          }
+        } else if (!certPem || !keyPem) {
           alert(t("settings.httpsRequired"));
           return;
         }
@@ -80,11 +96,19 @@ export async function renderSettings(root) {
           await api("api/admin/tls", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ cert_pem: certPem, key_pem: keyPem }),
+            body: JSON.stringify(usingPaths
+              ? { cert_path: cp, key_path: kp }
+              : { cert_pem: certPem, key_pem: keyPem }),
           });
           status.textContent = t("settings.httpsSavedRestart");
-          cert.value = "";
-          key.value = "";
+          if (usingPaths) {
+            // Keep paths as-is.
+            cert.value = "";
+            key.value = "";
+          } else {
+            cert.value = "";
+            key.value = "";
+          }
         } catch (e) {
           alert(e.message || String(e));
         } finally {
@@ -95,6 +119,11 @@ export async function renderSettings(root) {
 
     tlsCard.append(
       el("div", { class: "path" }, t("settings.httpsHelp")),
+      el("div", { class: "path", style: "margin-top:10px;" }, t("settings.httpsCertPath")),
+      certPath,
+      el("div", { class: "path", style: "margin-top:10px;" }, t("settings.httpsKeyPath")),
+      keyPath,
+      el("div", { class: "path", style: "margin-top:10px;" }, t("settings.httpsOrPaste")),
       el("div", { class: "path", style: "margin-top:10px;" }, t("settings.httpsCert")),
       cert,
       el("div", { class: "path", style: "margin-top:10px;" }, t("settings.httpsKey")),
