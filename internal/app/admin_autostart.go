@@ -94,7 +94,8 @@ func (s *Server) HandleAdminAutostart(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := s.runRoot(ctx, systemctl, "enable", "--now", unitName); err != nil {
+		// Enable autostart only; do not start the service here (start/restart is a separate action).
+		if err := s.runRoot(ctx, systemctl, "enable", unitName); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -103,7 +104,8 @@ func (s *Server) HandleAdminAutostart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Disable only; do not delete unit file here (use uninstall/remove).
-	if err := s.runRoot(ctx, systemctl, "disable", "--now", unitName); err != nil {
+	// Do not stop the service on disable; only remove autostart.
+	if err := s.runRoot(ctx, systemctl, "disable", unitName); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
