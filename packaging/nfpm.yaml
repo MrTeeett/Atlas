@@ -1,5 +1,5 @@
 name: atlas
-arch: "{{ .Env.NFPM_ARCH }}"
+arch: "{{ .Arch }}"
 platform: linux
 version: "{{ .Env.PKG_VERSION }}"
 release: "1"
@@ -10,7 +10,7 @@ description: Atlas web panel for server management
 homepage: https://github.com/MrTeeett/atlas
 
 contents:
-  - src: dist/linux_{{ .Env.NFPM_ARCH }}/atlas
+  - src: dist/linux_{{ .Arch }}/atlas
     dst: /usr/bin/atlas
     file_info:
       mode: 0755
