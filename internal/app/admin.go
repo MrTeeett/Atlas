@@ -299,7 +299,7 @@ func (s *Server) HandleAdminAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 
 	var cmd *exec.Cmd
@@ -309,7 +309,11 @@ func (s *Server) HandleAdminAction(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "service_name is not configured", http.StatusBadRequest)
 			return
 		}
-		cmd = s.rootCmd(ctx, "systemctl", "restart", s.cfg.ServiceName)
+		unit := strings.TrimSpace(s.cfg.ServiceName)
+		if !strings.HasSuffix(unit, ".service") {
+			unit += ".service"
+		}
+		cmd = s.rootCmd(ctx, "systemctl", "restart", unit)
 	case "reboot":
 		cmd = s.rootCmd(ctx, "systemctl", "reboot")
 	case "shutdown":
@@ -319,8 +323,29 @@ func (s *Server) HandleAdminAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fire and forget (systemd will terminate us).
-	_ = cmd.Start()
+	if action == "restart" {
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			msg := strings.TrimSpace(string(out))
+			if msg == "" {
+				msg = err.Error()
+			}
+			http.Error(w, msg, http.StatusInternalServerError)
+			return
+		}
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = "service restarted"
+		}
+		writeJSON(w, adminActionResponse{Ok: true, Message: msg})
+		return
+	}
+
+	// For reboot/shutdown: fire-and-forget.
+	if err := cmd.Start(); err != nil {
+		http.Error(w, fmt.Sprintf("start command: %v", err), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, adminActionResponse{Ok: true, Message: "command started"})
 }
 
