@@ -1,8 +1,8 @@
 name: atlas
 arch: "__ARCH__"
 platform: linux
-version: "{{ .Env.PKG_VERSION }}"
-release: "{{ .Env.PKG_RELEASE }}"
+version: "__VERSION__"
+release: "__RELEASE__"
 section: admin
 priority: optional
 maintainer: Atlas contributors

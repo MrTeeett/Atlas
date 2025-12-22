@@ -71,7 +71,14 @@ jobs:
           set -euo pipefail
           chmod +x packaging/scripts/*.sh
 
-          mkcfg() { sed -e "s/__ARCH__/$1/g" -e "s#__BIN__#$2#g" packaging/nfpm.yaml > dist/nfpm.yaml; }
+          mkcfg() {
+            sed \
+              -e "s/__ARCH__/$1/g" \
+              -e "s#__BIN__#$2#g" \
+              -e "s/__VERSION__/${PKG_VERSION}/g" \
+              -e "s/__RELEASE__/${PKG_RELEASE}/g" \
+              packaging/nfpm.yaml > dist/nfpm.yaml
+          }
 
           mkcfg amd64 dist/linux_amd64/atlas
           nfpm package -f dist/nfpm.yaml -p deb -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.deb"
