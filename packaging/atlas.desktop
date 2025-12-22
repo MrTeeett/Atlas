@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Atlas
+Comment=Atlas web panel
+Exec=atlas
+Icon=atlas
+Terminal=false
+Categories=System;Network;
+

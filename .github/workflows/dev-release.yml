@@ -1,0 +1,119 @@
+name: dev-release-0.0.1
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Prepare variables
+        id: vars
+        run: |
+          set -euo pipefail
+          echo "tag=dev" >> "$GITHUB_OUTPUT"
+          echo "pkg_version=0.0.1" >> "$GITHUB_OUTPUT"
+          echo "pkg_release=dev${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Build linux binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist/linux_amd64 dist/linux_arm64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/linux_amd64/atlas ./cmd/atlas
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/linux_arm64/atlas ./cmd/atlas
+          mkdir -p dist/linux_x86_64 dist/linux_aarch64
+          cp -f dist/linux_amd64/atlas dist/linux_x86_64/atlas
+          cp -f dist/linux_arm64/atlas dist/linux_aarch64/atlas
+
+      - name: Build tarballs
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            tmp="dist/tmp_${arch}"
+            rm -rf "$tmp"
+            mkdir -p "$tmp"
+            cp "dist/linux_${arch}/atlas" "$tmp/atlas"
+            cp packaging/atlas.service "$tmp/atlas.service"
+            cp packaging/atlas.json "$tmp/atlas.json"
+            tar -C "$tmp" -czf "dist/atlas_${{ steps.vars.outputs.tag }}_linux_${arch}.tar.gz" .
+          done
+          rm -rf dist/tmp_*
+
+      - name: Build AppImage (x86_64)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o appimagetool-x86_64.AppImage \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          chmod +x scripts/build_appimage.sh
+          ./scripts/build_appimage.sh "${{ steps.vars.outputs.tag }}"
+
+      - name: Install nfpm
+        run: |
+          set -euo pipefail
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.0
+
+      - name: Build .deb and .rpm
+        env:
+          PKG_VERSION: ${{ steps.vars.outputs.pkg_version }}
+          PKG_RELEASE: ${{ steps.vars.outputs.pkg_release }}
+        run: |
+          set -euo pipefail
+          chmod +x packaging/scripts/*.sh
+
+          nfpm package -f packaging/nfpm.yaml -p deb -a amd64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.deb"
+          nfpm package -f packaging/nfpm.yaml -p deb -a arm64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.deb"
+
+          nfpm package -f packaging/nfpm.yaml -p rpm -a x86_64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.rpm"
+          nfpm package -f packaging/nfpm.yaml -p rpm -a aarch64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.rpm"
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cp -f install.sh dist/install.sh
+          ( cd dist && ls -1 | grep -v '^SHA256SUMS.txt$' | xargs -I{} sha256sum "{}" ) > dist/SHA256SUMS.txt
+
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view "${{ steps.vars.outputs.tag }}" >/dev/null 2>&1 || \
+            gh release create "${{ steps.vars.outputs.tag }}" --prerelease --title "${{ steps.vars.outputs.tag }}" \
+              --notes "Development builds. Assets may be replaced on every push to main."
+
+      - name: Delete existing assets (overwrite)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for f in dist/*; do
+            a="$(basename "$f")"
+            gh release delete-asset "${{ steps.vars.outputs.tag }}" "$a" -y >/dev/null 2>&1 || true
+          done
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          prerelease: true
+          files: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
+            dist/install.sh
+            dist/SHA256SUMS.txt

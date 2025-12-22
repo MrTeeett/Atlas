@@ -1,0 +1,15 @@
+[Unit]
+Description=Atlas web panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/lib/atlas
+ExecStart=/usr/bin/atlas -config /etc/atlas/atlas.json
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+
