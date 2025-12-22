@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${ATLAS_REPO:-MrTeeett/atlas}"
+REPO="${ATLAS_REPO:-MrTeeett/Atlas}"
 VERSION="${ATLAS_VERSION:-}"
 METHOD="${ATLAS_METHOD:-auto}" # auto|appimage|deb|rpm|tar
 VERIFY_SHA="${ATLAS_VERIFY_SHA:-1}"

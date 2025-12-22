@@ -16,7 +16,53 @@ Prototype web panel for managing a Linux server in Go (single binary).
 go run ./cmd/atlas -config ./atlas.json
 ```
 
-## Quick install (local)
+## Install (recommended: GitHub Releases)
+
+Atlas publishes ready-to-use artifacts in GitHub Releases:
+
+- `AppImage` (x86_64)
+- `.deb` (x86_64/arm64)
+- `.rpm` (x86_64/arm64)
+- `tar.gz` (x86_64/arm64)
+- `install.sh` + `SHA256SUMS.txt`
+
+Install the latest release:
+
+```bash
+curl -fsSL https://github.com/MrTeeett/Atlas/releases/latest/download/install.sh | bash
+```
+
+Install a specific version:
+
+```bash
+curl -fsSL https://github.com/MrTeeett/Atlas/releases/download/v0.0.1/install.sh | bash -s -- --version v0.0.1
+```
+
+Dev channel (the `dev` release tag, assets are replaced on every push to `main`):
+
+```bash
+curl -fsSL https://github.com/MrTeeett/Atlas/releases/download/dev/install.sh | bash -s -- --version dev
+```
+
+Force a specific install method:
+
+```bash
+# auto|appimage|deb|rpm|tar
+curl -fsSL https://github.com/MrTeeett/Atlas/releases/latest/download/install.sh | bash -s -- --method tar
+```
+
+After installing via `.deb/.rpm`:
+
+```bash
+sudo systemctl enable --now atlas
+```
+
+Config and data locations (when installed via `.deb/.rpm`):
+
+- config: `/etc/atlas/atlas.json`
+- data/keys/users DB: `/var/lib/atlas/`
+
+## Quick install (local, build from source)
 
 The script builds the binary, generates a random `port`/`base_path`/`password` by default (and offers to enter your own if you decline), creates an `admin` user with full privileges, and prints the `/login` URL:
 
@@ -24,7 +70,7 @@ The script builds the binary, generates a random `port`/`base_path`/`password` b
 ./deploy/install.sh
 ```
 
-## One-command install (from GitHub)
+## One-command install (from GitHub, build from source)
 
 Requirements: `bash`, `tar`, `go`, plus `curl` or `wget`.
 
