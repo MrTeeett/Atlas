@@ -1,0 +1,29 @@
+name: atlas
+arch: "{{ .Env.NFPM_ARCH }}"
+platform: linux
+version: "{{ .Env.PKG_VERSION }}"
+release: "1"
+section: admin
+priority: optional
+maintainer: Atlas contributors
+description: Atlas web panel for server management
+homepage: https://github.com/MrTeeett/atlas
+
+contents:
+  - src: dist/linux_{{ .Env.NFPM_ARCH }}/atlas
+    dst: /usr/bin/atlas
+    file_info:
+      mode: 0755
+  - src: packaging/atlas.service
+    dst: /lib/systemd/system/atlas.service
+    file_info:
+      mode: 0644
+  - src: packaging/atlas.json
+    dst: /etc/atlas/atlas.json
+    type: config
+    file_info:
+      mode: 0640
+
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  postremove: packaging/scripts/postremove.sh

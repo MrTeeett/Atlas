@@ -5,13 +5,14 @@
   "cookie_secure": false,
   "enable_exec": true,
   "enable_firewall": true,
-  "enable_admin_actions": true,
+  "enable_admin_actions": false,
   "service_name": "atlas.service",
   "fs_sudo": true,
   "fs_users": [
     "*"
   ],
-  "master_key_file": "atlas.master.key",
-  "user_db_path": "atlas.users.db",
-  "firewall_db_path": "atlas.firewall.db"
+  "master_key_file": "/var/lib/atlas/atlas.master.key",
+  "user_db_path": "/var/lib/atlas/atlas.users.db",
+  "firewall_db_path": "/var/lib/atlas/atlas.firewall.db"
 }
+
