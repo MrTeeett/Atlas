@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -295,11 +296,18 @@ func (s *TerminalService) startSession(id, as string, cols, rows int) (*termSess
 		cmd = exec.Command(s.sudoPath, "-u", as, "-H", "--", s.shell, "-i")
 	}
 
-	cmd.Env = append(os.Environ(),
-		"TERM=xterm-256color",
+	term := "xterm-256color"
+	if !hasTerminfo(term) {
+		// Minimal Ubuntu images often lack xterm-256color terminfo, which disables colors in many shells/tools.
+		term = "xterm"
+	}
+	env := stripEnv(os.Environ(), "TERM=", "COLORTERM=")
+	env = append(env,
+		"TERM="+term,
 		"COLORTERM=truecolor",
 		"ATLAS=1",
 	)
+	cmd.Env = env
 
 	// Attach to slave side.
 	cmd.Stdin = pty.slave
@@ -332,6 +340,67 @@ func (s *TerminalService) startSession(id, as string, cols, rows int) (*termSess
 	}
 	go sess.readLoop(s.cfg.TailBytes)
 	return sess, nil
+}
+
+func hasTerminfo(term string) bool {
+	term = strings.TrimSpace(term)
+	if term == "" {
+		return false
+	}
+	first := strings.ToLower(term[:1])
+	hexDir := fmt.Sprintf("%02x", term[0])
+	checkDirs := func(root string) bool {
+		if root == "" {
+			return false
+		}
+		root = filepath.Clean(root)
+		for _, sub := range []string{first, hexDir} {
+			p := filepath.Join(root, sub, term)
+			if _, err := os.Stat(p); err == nil {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Explicit terminfo path(s) from env.
+	if d := strings.TrimSpace(os.Getenv("TERMINFO")); checkDirs(d) {
+		return true
+	}
+	if dirs := strings.TrimSpace(os.Getenv("TERMINFO_DIRS")); dirs != "" {
+		for _, d := range strings.Split(dirs, ":") {
+			if checkDirs(strings.TrimSpace(d)) {
+				return true
+			}
+		}
+	}
+
+	for _, root := range []string{"/etc/terminfo", "/lib/terminfo", "/usr/share/terminfo"} {
+		if checkDirs(root) {
+			return true
+		}
+	}
+	return false
+}
+
+func stripEnv(env []string, prefixes ...string) []string {
+	if len(env) == 0 || len(prefixes) == 0 {
+		return env
+	}
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		skip := false
+		for _, p := range prefixes {
+			if strings.HasPrefix(e, p) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func (s *TerminalService) reaperLoop() {

@@ -10,7 +10,7 @@ function clamp(n, lo, hi) {
 
 function parseParams(raw) {
   if (!raw) return [];
-  return raw.split(";").map((s) => (s === "" ? 0 : Number(s) || 0));
+  return raw.split(/[;:]/).map((s) => (s === "" ? 0 : Number(s) || 0));
 }
 
 function color256(n) {
@@ -84,6 +84,10 @@ export class VTerm {
     this.scrollTop = 0;
     this.scrollBottom = this.rows - 1;
     this.wrap = true;
+    // New line mode: treat LF as CRLF (common expectation in shells and many programs).
+    // Can be toggled by ANSI mode 20 (SM/RM), but we still guard against bare LF.
+    this.newlineMode = true;
+    this._sawCR = false;
     this.cursorVisible = true;
     this.cursorKeysApp = false;
     this.bracketedPaste = false;
@@ -347,8 +351,17 @@ export class VTerm {
       const ch = s[i];
       if (this._state === "n") {
         if (ch === ESC) { this._state = "e"; continue; }
-        if (ch === "\n") { this._lineFeed(); continue; }
-        if (ch === "\r") { this.cursorX = 0; continue; }
+        if (ch === "\n") {
+          if (this.newlineMode || !this._sawCR) this.cursorX = 0;
+          this._lineFeed();
+          this._sawCR = false;
+          continue;
+        }
+        if (ch === "\r") {
+          this.cursorX = 0;
+          this._sawCR = true;
+          continue;
+        }
         if (ch === "\b") { this.cursorX = clamp(this.cursorX - 1, 0, this.cols - 1); continue; }
         if (ch === "\t") {
           const next = (Math.floor(this.cursorX / 8) + 1) * 8;
@@ -358,6 +371,7 @@ export class VTerm {
         if (ch === "\x07") { continue; } // BEL
         // Printable
         this._putChar(ch);
+        this._sawCR = false;
         continue;
       }
 
@@ -547,6 +561,12 @@ export class VTerm {
         } else if (ch === "c" && prefix === "") {
           // DA: device attributes (best-effort VT100).
           this.writeFn(`${ESC}[?1;0c`);
+        } else if ((ch === "h" || ch === "l") && prefix === "") {
+          // SM/RM (non-DEC private).
+          const set = ch === "h";
+          for (const m of params) {
+            if (m === 20) this.newlineMode = set;
+          }
         } else if ((ch === "h" || ch === "l") && prefix === "?") {
           const set = ch === "h";
           for (const m of params) {
