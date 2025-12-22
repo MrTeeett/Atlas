@@ -71,6 +71,8 @@ After installing via `.deb/.rpm`:
 sudo systemctl enable --now atlas
 ```
 
+When installed via the release `install.sh` (as root), it will try to start the `atlas` service automatically if systemd is available.
+
 Logging:
 
 - Configure in `atlas.json`: `log_level` (`debug|info|warn|error|off`), `log_file`, `log_stdout`.

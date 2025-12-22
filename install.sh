@@ -247,6 +247,23 @@ install_config_path() {
   fi
 }
 
+service_available() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  [[ -f /etc/systemd/system/atlas.service || -f /lib/systemd/system/atlas.service ]] || return 1
+  return 0
+}
+
+start_service() {
+  if ! is_root; then
+    return 0
+  fi
+  if ! service_available; then
+    return 0
+  fi
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl restart atlas >/dev/null 2>&1 || systemctl start atlas >/dev/null 2>&1 || true
+}
+
 rand_hex() {
   local nbytes="${1:-12}"
   od -An -N "${nbytes}" -tx1 </dev/urandom | tr -d ' \n'
@@ -639,3 +656,8 @@ fi
 
 echo "Configured: ${CFG}"
 print_login "${CFG}" "${ADMIN_USER}" "${ADMIN_PASS}"
+
+start_service
+if service_available; then
+  echo "Service: started (atlas)"
+fi
