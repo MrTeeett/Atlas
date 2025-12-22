@@ -32,6 +32,12 @@ Install the latest release:
 curl -fsSL https://github.com/MrTeeett/Atlas/releases/latest/download/install.sh | bash
 ```
 
+The installer can also initialize the config and create an admin user (it will offer random values for `port` / `base_path` / password and lets you override them):
+
+```bash
+curl -fsSL https://github.com/MrTeeett/Atlas/releases/latest/download/install.sh | bash -s -- --fresh
+```
+
 Install a specific version:
 
 ```bash
