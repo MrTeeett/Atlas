@@ -84,12 +84,18 @@ jobs:
 
           mkcfg aarch64 dist/linux_arm64/atlas
           nfpm package -f dist/nfpm.yaml -p rpm -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.rpm"
+          rm -f dist/nfpm.yaml
 
       - name: Checksums
         run: |
           set -euo pipefail
           cp -f install.sh dist/install.sh
-          ( cd dist && ls -1 | grep -v '^SHA256SUMS.txt$' | xargs -I{} sha256sum "{}" ) > dist/SHA256SUMS.txt
+          (
+            cd dist
+            find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -printf '%f\n' | sort | while read -r f; do
+              sha256sum "$f"
+            done
+          ) > dist/SHA256SUMS.txt
 
       - name: Release
         uses: softprops/action-gh-release@v2
