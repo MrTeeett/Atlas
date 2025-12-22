@@ -37,6 +37,26 @@ function color256(n) {
   return `#${rr}${gg}${bb}`;
 }
 
+function rgbTo256(r, g, b) {
+  r = clamp(Number(r) || 0, 0, 255);
+  g = clamp(Number(g) || 0, 0, 255);
+  b = clamp(Number(b) || 0, 0, 255);
+
+  // Grayscale ramp 232..255 (plus extremes mapped to base16).
+  if (r === g && g === b) {
+    if (r < 8) return 0;
+    if (r > 248) return 15;
+    const idx = Math.round((r - 8) / 10);
+    return 232 + clamp(idx, 0, 23);
+  }
+
+  const to6 = (v) => clamp(Math.round((v / 255) * 5), 0, 5);
+  const rr = to6(r);
+  const gg = to6(g);
+  const bb = to6(b);
+  return 16 + 36 * rr + 6 * gg + bb;
+}
+
 function attrKey(a) {
   return `${a.fg}|${a.bg}|${a.bold ? 1 : 0}|${a.underline ? 1 : 0}|${a.inverse ? 1 : 0}`;
 }
@@ -272,8 +292,13 @@ export class VTerm {
           if (isBg) this.attr.bg = clamp(n, 0, 255);
           else this.attr.fg = clamp(n, 0, 255);
         } else if (mode === 2) {
-          // 24-bit: 38;2;r;g;b (best-effort map to nearest 256 by ignoring and keeping default).
-          i += 3;
+          // 24-bit: 38;2;r;g;b (map to nearest xterm-256 color).
+          const r = params[i++] ?? 0;
+          const g = params[i++] ?? 0;
+          const b = params[i++] ?? 0;
+          const n = rgbTo256(r, g, b);
+          if (isBg) this.attr.bg = n;
+          else this.attr.fg = n;
         }
       }
     }

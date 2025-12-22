@@ -50,6 +50,10 @@ func openPTY(cols, rows int) (ptyPair, error) {
 	}
 	slave := os.NewFile(uintptr(sfd), sname)
 
+	// Make the PTY behave closer to a typical interactive terminal (CRLF on output, etc).
+	// Some minimal distros default to raw-ish flags which can cause "indentation" after newlines in the web terminal.
+	_ = setTermiosSane(slave)
+
 	if cols > 0 && rows > 0 {
 		_ = setWinSize(master, cols, rows)
 	}
@@ -60,6 +64,18 @@ func openPTY(cols, rows int) (ptyPair, error) {
 func setWinSize(f *os.File, cols, rows int) error {
 	ws := winsize{Rows: uint16(rows), Cols: uint16(cols)}
 	return ioctl(int(f.Fd()), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
+}
+
+func setTermiosSane(f *os.File) error {
+	var tio syscall.Termios
+	if err := ioctl(int(f.Fd()), syscall.TCGETS, uintptr(unsafe.Pointer(&tio))); err != nil {
+		return err
+	}
+	// Output post-processing + NL -> CRNL.
+	tio.Oflag |= syscall.OPOST | syscall.ONLCR
+	// Map CR to NL on input (common for shells/readline).
+	tio.Iflag |= syscall.ICRNL
+	return ioctl(int(f.Fd()), syscall.TCSETS, uintptr(unsafe.Pointer(&tio)))
 }
 
 func ioctl(fd int, req, arg uintptr) error {

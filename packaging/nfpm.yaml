@@ -9,6 +9,12 @@ maintainer: Atlas contributors
 description: Atlas web panel for server management
 homepage: https://github.com/MrTeeett/atlas
 
+depends:
+  - bash
+  - sudo
+  # Provides common terminfo entries like xterm-256color (needed for colors in many tools on minimal servers).
+  - ncurses-term
+
 contents:
   - src: "__BIN__"
     dst: /usr/bin/atlas
