@@ -11,6 +11,7 @@ LISTEN="${ATLAS_LISTEN:-}"
 BASE_PATH="${ATLAS_BASE_PATH:-}"
 ADMIN_USER="${ATLAS_ADMIN_USER:-admin}"
 ADMIN_PASS="${ATLAS_ADMIN_PASS:-}"
+PORT_OVERRIDE="${ATLAS_PORT:-}"
 
 usage() {
   cat <<'EOF'
@@ -22,7 +23,8 @@ Options:
   --method auto|appimage|deb|rpm|tar
   --no-setup              Don't create config/users, only install the binary
   --fresh                 Remove existing config/DB and reinitialize
-  --listen <addr>         Listen address, e.g. 127.0.0.1:8080
+  --listen <addr>         Listen address, e.g. 0.0.0.0:8080
+  --port <port>           Convenience for --listen 0.0.0.0:<port>
   --base-path </path>     URL base path, e.g. /abc123 or /
   --admin-user <name>     Admin username (default: admin)
   --admin-pass <pass>     Admin password (if not set, a random one is offered)
@@ -34,7 +36,7 @@ Examples:
   ./install.sh --version v1.2.3
   ./install.sh --method deb
   ./install.sh --fresh
-  ./install.sh --listen 127.0.0.1:8080 --base-path /atlas
+  ./install.sh --port 8080 --base-path /atlas
   ATLAS_REPO=you/atlas ./install.sh
 EOF
 }
@@ -47,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --no-setup) SETUP="0"; shift 1;;
     --fresh) FRESH="1"; shift 1;;
     --listen) LISTEN="${2:-}"; shift 2;;
+    --port) PORT_OVERRIDE="${2:-}"; shift 2;;
     --base-path) BASE_PATH="${2:-}"; shift 2;;
     --admin-user) ADMIN_USER="${2:-}"; shift 2;;
     --admin-pass) ADMIN_PASS="${2:-}"; shift 2;;
@@ -88,7 +91,49 @@ pm_detect() {
 }
 
 is_root() { [[ "$(id -u)" -eq 0 ]]; }
-is_tty() { [[ -t 0 && -t 1 ]]; }
+
+# When this script is executed via a pipe (curl | bash), stdin isn't a TTY.
+# Read prompts from /dev/tty if available so interactive setup still works.
+TTY=""
+if [[ -e /dev/tty && -r /dev/tty && -w /dev/tty ]]; then
+  TTY="/dev/tty"
+fi
+
+is_tty() { [[ -n "${TTY}" ]]; }
+
+tty_print() {
+  if is_tty; then
+    printf "%s" "$*" >"${TTY}"
+  else
+    printf "%s" "$*"
+  fi
+}
+
+tty_read_line() {
+  local prompt="$1"
+  local out=""
+  if is_tty; then
+    tty_print "${prompt}"
+    IFS= read -r out <"${TTY}" || out=""
+  else
+    IFS= read -r -p "${prompt}" out || out=""
+  fi
+  printf "%s" "${out}"
+}
+
+tty_read_secret() {
+  local prompt="$1"
+  local out=""
+  if is_tty; then
+    tty_print "${prompt}"
+    IFS= read -r -s out <"${TTY}" || out=""
+    tty_print $'\n'
+  else
+    IFS= read -r -s -p "${prompt}" out || out=""
+    printf "\n"
+  fi
+  printf "%s" "${out}"
+}
 
 TAG=""
 if [[ -n "$VERSION" ]]; then
@@ -235,7 +280,7 @@ prompt_yes_no() {
   fi
 
   while true; do
-    read -r -p "${question} " reply || reply=""
+    reply="$(tty_read_line "${question} ")" || reply=""
     reply="$(echo "${reply}" | tr '[:upper:]' '[:lower:]' | xargs)"
     if [[ -z "${reply}" ]]; then
       reply="$(echo "${default}" | tr '[:upper:]' '[:lower:]')"
@@ -266,16 +311,16 @@ normalize_base_path() {
 prompt_port() {
   local suggested="$1"
   local port="${suggested}"
-  if prompt_yes_no "Use random port ${suggested}? [Y/n]" "Y"; then
-    echo "${port}"
-    return 0
-  fi
   if ! is_tty; then
     echo "${port}"
     return 0
   fi
+  if ! prompt_yes_no "Set port manually (instead of random ${suggested})? [y/N]" "N"; then
+    echo "${port}"
+    return 0
+  fi
   while true; do
-    read -r -p "Enter port (1-65535): " port || port=""
+    port="$(tty_read_line "Enter port (1-65535): ")" || port=""
     port="$(echo "${port}" | tr -d ' ' )"
     if [[ "${port}" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )); then
       echo "${port}"
@@ -288,16 +333,16 @@ prompt_port() {
 prompt_base_path() {
   local suggested="$1"
   local p="${suggested}"
-  if prompt_yes_no "Use random base path ${suggested}? [Y/n]" "Y"; then
-    echo "${p}"
-    return 0
-  fi
   if ! is_tty; then
     echo "${p}"
     return 0
   fi
+  if ! prompt_yes_no "Set base path manually (instead of random ${suggested})? [y/N]" "N"; then
+    echo "${p}"
+    return 0
+  fi
   while true; do
-    read -r -p "Enter base path (e.g. /abc123, or / for root): " p || p=""
+    p="$(tty_read_line "Enter base path (e.g. /abc123, or / for root): ")" || p=""
     p="$(normalize_base_path "${p}")"
     if [[ "${p}" == "/" ]] || [[ "${p}" =~ ^/[A-Za-z0-9._-]+$ ]]; then
       echo "${p}"
@@ -310,17 +355,16 @@ prompt_base_path() {
 prompt_password() {
   local suggested="$1"
   local p="${suggested}"
-  if prompt_yes_no "Use random admin password? [Y/n]" "Y"; then
-    echo "${p}"
-    return 0
-  fi
   if ! is_tty; then
     echo "${p}"
     return 0
   fi
+  if ! prompt_yes_no "Set admin password manually (instead of random)? [y/N]" "N"; then
+    echo "${p}"
+    return 0
+  fi
   while true; do
-    read -r -s -p "Enter admin password (min 8 chars): " p || p=""
-    echo
+    p="$(tty_read_secret "Enter admin password (min 8 chars): ")" || p=""
     if (( ${#p} >= 8 )); then
       echo "${p}"
       return 0
@@ -552,7 +596,11 @@ if [[ "${do_setup}" -ne 1 ]]; then
 fi
 
 if [[ -z "${LISTEN}" ]]; then
-  PORT="$(prompt_port "$(rand_port 20000 60000)")"
+  if [[ -n "${PORT_OVERRIDE}" ]]; then
+    PORT="$(echo "${PORT_OVERRIDE}" | tr -d ' ')"
+  else
+    PORT="$(prompt_port "$(rand_port 20000 60000)")"
+  fi
   # Bind to all interfaces so you can access the UI remotely.
   # Recommended: put Atlas behind TLS (reverse proxy) and restrict access by firewall.
   LISTEN="0.0.0.0:${PORT}"
