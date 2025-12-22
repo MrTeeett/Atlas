@@ -263,7 +263,7 @@ export async function renderMonitor(root, initialPage) {
     } finally {
       mon.autostartAt = Date.now();
       mon.autostartLoading = false;
-      if (mon.page === "processes") renderPage();
+      if (mon.page === "autostart") renderPage();
     }
   }
 
@@ -628,9 +628,12 @@ export async function renderMonitor(root, initialPage) {
 
   async function start() {
     setPage(mon.page);
-    await tickStats();
-    await tickProcs();
-    if (mon.page === "autostart") await tickAutostart(true);
+    // Don't let a single failed request break the whole view (e.g. after re-login).
+    await Promise.allSettled([
+      tickStats(),
+      tickProcs(),
+      mon.page === "autostart" ? tickAutostart(true) : Promise.resolve(),
+    ]);
     mon.timerStats = setInterval(() => tickStats().catch(() => {}), 2000);
     mon.timerProcs = setInterval(() => tickProcs().catch(() => {}), 2000);
   }

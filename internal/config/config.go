@@ -147,6 +147,7 @@ func Load(path string) (Config, error) {
 }
 
 func (c *Config) applyDefaults(configPath string) {
+	cfgDir := filepath.Dir(filepath.Clean(configPath))
 	if c.Listen == "" {
 		c.Listen = "127.0.0.1:8080"
 	}
@@ -160,19 +161,25 @@ func (c *Config) applyDefaults(configPath string) {
 	c.TLSCertFile = strings.TrimSpace(c.TLSCertFile)
 	c.TLSKeyFile = strings.TrimSpace(c.TLSKeyFile)
 	if c.TLSCertFile != "" {
-		c.TLSCertFile = filepath.Clean(c.TLSCertFile)
+		c.TLSCertFile = resolveRel(cfgDir, c.TLSCertFile)
 	}
 	if c.TLSKeyFile != "" {
-		c.TLSKeyFile = filepath.Clean(c.TLSKeyFile)
+		c.TLSKeyFile = resolveRel(cfgDir, c.TLSKeyFile)
 	}
 	if c.MasterKeyFile == "" {
-		c.MasterKeyFile = filepath.Join(filepath.Dir(configPath), "atlas.master.key")
+		c.MasterKeyFile = filepath.Join(cfgDir, "atlas.master.key")
+	} else {
+		c.MasterKeyFile = resolveRel(cfgDir, c.MasterKeyFile)
 	}
 	if c.UserDBPath == "" {
-		c.UserDBPath = filepath.Join(filepath.Dir(configPath), "atlas.users.db")
+		c.UserDBPath = filepath.Join(cfgDir, "atlas.users.db")
+	} else {
+		c.UserDBPath = resolveRel(cfgDir, c.UserDBPath)
 	}
 	if c.FWDBPath == "" {
-		c.FWDBPath = filepath.Join(filepath.Dir(configPath), "atlas.firewall.db")
+		c.FWDBPath = filepath.Join(cfgDir, "atlas.firewall.db")
+	} else {
+		c.FWDBPath = resolveRel(cfgDir, c.FWDBPath)
 	}
 	if c.ServiceName == "" {
 		c.ServiceName = "atlas.service"
@@ -181,7 +188,9 @@ func (c *Config) applyDefaults(configPath string) {
 		c.LogLevel = "info"
 	}
 	if strings.TrimSpace(c.LogFile) == "" {
-		c.LogFile = filepath.Join(filepath.Dir(configPath), "atlas.log")
+		c.LogFile = filepath.Join(cfgDir, "atlas.log")
+	} else {
+		c.LogFile = resolveRel(cfgDir, c.LogFile)
 	}
 	if strings.TrimSpace(c.UpdateRepo) == "" {
 		c.UpdateRepo = "MrTeeett/Atlas"
@@ -190,6 +199,17 @@ func (c *Config) applyDefaults(configPath string) {
 		c.UpdateChannel = "auto"
 	}
 	c.FSUsers = normalizeCSV(c.FSUsers)
+}
+
+func resolveRel(baseDir, p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(filepath.Join(baseDir, p))
 }
 
 func EnsureMasterKeyFile(path string) ([]byte, error) {

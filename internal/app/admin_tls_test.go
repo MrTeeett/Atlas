@@ -123,8 +123,14 @@ func TestAdminTLSWritesFilesAndUpdatesConfig(t *testing.T) {
 	}
 
 	// Files exist
-	certPath := filepath.Join(dir, cfg2.TLSCertFile)
-	keyPath := filepath.Join(dir, cfg2.TLSKeyFile)
+	certPath := cfg2.TLSCertFile
+	keyPath := cfg2.TLSKeyFile
+	if !filepath.IsAbs(certPath) {
+		certPath = filepath.Join(dir, certPath)
+	}
+	if !filepath.IsAbs(keyPath) {
+		keyPath = filepath.Join(dir, keyPath)
+	}
 	if _, err := os.Stat(certPath); err != nil {
 		t.Fatalf("cert missing: %v", err)
 	}

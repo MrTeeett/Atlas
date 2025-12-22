@@ -3,6 +3,7 @@ package system
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -38,7 +39,7 @@ func (s *AutostartService) HandleAutostart(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
 	units, msg := listEnabledServices(ctx, systemctl)
@@ -62,7 +63,16 @@ func (s *AutostartService) HandleAutostart(w http.ResponseWriter, r *http.Reques
 		showable = append(showable, u)
 	}
 
-	items, showMsg := showUnits(ctx, systemctl, showable)
+	items, showMsg, showErr := showUnits(ctx, systemctl, showable)
+	if len(items) == 0 && len(showable) > 0 && (errors.Is(showErr, context.DeadlineExceeded) || errors.Is(showErr, context.Canceled)) {
+		// If we timed out while fetching statuses, still return the list of enabled units.
+		for _, u := range showable {
+			items = append(items, AutostartItem{Unit: u, Enabled: true})
+		}
+		if showMsg == "" {
+			showMsg = "timeout while querying unit status"
+		}
+	}
 	items = append(items, templateItems...)
 	if msg == "" {
 		msg = showMsg
@@ -119,9 +129,10 @@ func isTemplateUnit(unit string) bool {
 	return strings.Contains(unit, "@.service")
 }
 
-func showUnits(ctx context.Context, systemctl string, units []string) ([]AutostartItem, string) {
+func showUnits(ctx context.Context, systemctl string, units []string) ([]AutostartItem, string, error) {
 	var out []AutostartItem
 	var msg string
+	var errOut error
 	// Chunk to avoid huge argv.
 	const chunkSize = 80
 	for i := 0; i < len(units); i += chunkSize {
@@ -129,19 +140,25 @@ func showUnits(ctx context.Context, systemctl string, units []string) ([]Autosta
 		if j > len(units) {
 			j = len(units)
 		}
-		items, chunkMsg := showUnitsChunk(ctx, systemctl, units[i:j])
+		items, chunkMsg, chunkErr := showUnitsChunk(ctx, systemctl, units[i:j])
 		out = append(out, items...)
 		if msg == "" {
 			msg = chunkMsg
 		} else if chunkMsg != "" {
 			msg = strings.TrimSpace(msg + "; " + chunkMsg)
 		}
+		if errOut == nil && chunkErr != nil {
+			errOut = chunkErr
+		}
+		if errors.Is(chunkErr, context.DeadlineExceeded) || errors.Is(chunkErr, context.Canceled) {
+			break
+		}
 	}
-	return out, msg
+	return out, msg, errOut
 }
 
-func showUnitsChunk(ctx context.Context, systemctl string, units []string) ([]AutostartItem, string) {
-	args := []string{"show", "-p", "Id", "-p", "ActiveState", "-p", "SubState", "-p", "Description"}
+func showUnitsChunk(ctx context.Context, systemctl string, units []string) ([]AutostartItem, string, error) {
+	args := []string{"show", "--no-pager", "-p", "Id", "-p", "ActiveState", "-p", "SubState", "-p", "Description"}
 	args = append(args, units...)
 	cmd := exec.CommandContext(ctx, systemctl, args...)
 	raw, err := cmd.CombinedOutput()
@@ -150,13 +167,13 @@ func showUnitsChunk(ctx context.Context, systemctl string, units []string) ([]Au
 	items := parseSystemctlShow(s)
 
 	if err == nil {
-		return items, ""
+		return items, "", nil
 	}
 
 	if s == "" {
-		return items, err.Error()
+		return items, err.Error(), err
 	}
-	return items, firstShowErrorLine(s)
+	return items, firstShowErrorLine(s), err
 }
 
 func parseSystemctlShow(out string) []AutostartItem {
