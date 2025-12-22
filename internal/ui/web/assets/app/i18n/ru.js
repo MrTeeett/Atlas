@@ -248,8 +248,10 @@ export const ru = {
   admin: {
     server: "Сервер",
     users: "Пользователи",
+    logs: "Логи",
     titleServer: "Админ · Сервер",
     titleUsers: "Админ · Пользователи",
+    titleLogs: "Админ · Логи",
     actions: "Действия",
     restartService: "Перезапустить сервис",
     reboot: "Перезагрузить",
@@ -310,5 +312,13 @@ export const ru = {
       reboot: "перезагрузка",
       shutdown: "выключение",
     },
+
+    tail: "Хвост",
+    autoRefresh: "Автообновление",
+    downloadLogs: "Скачать",
+    logsDisabled: "Логирование отключено (log_level=off) или не настроен log_file.",
+    logsPath: "путь",
+    logsSize: "размер",
+    logsTruncated: "обрезано",
   },
 };

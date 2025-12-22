@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sort"
 	"strings"
 	"time"
@@ -336,6 +338,113 @@ func (s *Server) rootCmd(ctx context.Context, bin string, args ...string) *exec.
 		return exec.CommandContext(ctx, sudo, all...)
 	}
 	return exec.CommandContext(ctx, path, args...)
+}
+
+type adminLogsResponse struct {
+	Enabled   bool     `json:"enabled"`
+	Path      string   `json:"path"`
+	SizeBytes int64    `json:"size_bytes"`
+	Truncated bool     `json:"truncated"`
+	Lines     []string `json:"lines"`
+}
+
+func (s *Server) HandleAdminLogs(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimSpace(s.cfg.LogPath)
+	level := strings.TrimSpace(strings.ToLower(s.cfg.LogLevel))
+	enabled := path != "" && level != "off" && level != "none" && level != "disabled"
+
+	if !enabled {
+		writeJSON(w, adminLogsResponse{Enabled: false, Path: path, SizeBytes: 0, Lines: nil, Truncated: false})
+		return
+	}
+
+	path = filepath.Clean(path)
+
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	if r.URL.Query().Get("download") == "1" {
+		f, err := os.Open(path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		defer f.Close()
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filepath.Base(path)))
+		_, _ = io.Copy(w, f)
+		return
+	}
+
+	n := 200
+	if v := strings.TrimSpace(r.URL.Query().Get("n")); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			n = i
+		}
+	}
+	if n < 1 {
+		n = 1
+	}
+	if n > 5000 {
+		n = 5000
+	}
+
+	lines, size, truncated, err := tailLines(path, n, 1<<20)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeJSON(w, adminLogsResponse{Enabled: true, Path: path, SizeBytes: 0, Lines: nil, Truncated: false})
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, adminLogsResponse{Enabled: true, Path: path, SizeBytes: size, Lines: lines, Truncated: truncated})
+}
+
+func tailLines(path string, n int, maxBytes int64) (lines []string, size int64, truncated bool, _ error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	defer f.Close()
+
+	st, err := f.Stat()
+	if err != nil {
+		return nil, 0, false, err
+	}
+	size = st.Size()
+	if size == 0 {
+		return nil, 0, false, nil
+	}
+
+	start := int64(0)
+	if size > maxBytes {
+		start = size - maxBytes
+		truncated = true
+	}
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return nil, 0, false, err
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxBytes))
+	if err != nil {
+		return nil, 0, false, err
+	}
+
+	parts := strings.Split(string(b), "\n")
+	if truncated && len(parts) > 0 {
+		// Drop partial first line.
+		parts = parts[1:]
+	}
+	// Drop trailing empty line.
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) <= n {
+		return parts, size, truncated, nil
+	}
+	return parts[len(parts)-n:], size, truncated, nil
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

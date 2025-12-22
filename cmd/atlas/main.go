@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"flag"
-	"log"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -18,8 +20,11 @@ import (
 	"github.com/MrTeeett/atlas/internal/cli"
 	"github.com/MrTeeett/atlas/internal/config"
 	filesvc "github.com/MrTeeett/atlas/internal/fs"
+	"github.com/MrTeeett/atlas/internal/logging"
 	"github.com/MrTeeett/atlas/internal/userdb"
 )
+
+var execCommand = exec.Command
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "fs-helper" {
@@ -31,6 +36,12 @@ func main() {
 
 	var listenAddr string
 	flag.StringVar(&listenAddr, "listen", "", "listen address (overrides config)")
+
+	var foreground bool
+	flag.BoolVar(&foreground, "foreground", false, "run in foreground (don't detach)")
+
+	var daemonChild bool
+	flag.BoolVar(&daemonChild, "daemon-child", false, "internal")
 	flag.Parse()
 
 	// User management CLI:
@@ -38,7 +49,7 @@ func main() {
 	if flag.NArg() > 0 && flag.Arg(0) == "user" {
 		code, err := cli.RunUserCLI(configPath, flag.Args()[1:])
 		if err != nil {
-			log.Printf("user: %v", err)
+			fmt.Fprintf(os.Stderr, "user: %v\n", err)
 			os.Exit(1)
 		}
 		os.Exit(code)
@@ -46,28 +57,48 @@ func main() {
 
 	fileCfg, err := config.Load(configPath)
 	if err != nil {
-		log.Fatalf("load config %s: %v", configPath, err)
+		fmt.Fprintf(os.Stderr, "load config %s: %v\n", configPath, err)
+		os.Exit(1)
 	}
 	if listenAddr == "" {
 		listenAddr = fileCfg.Listen
+	}
+
+	// Detach early (only when launched from a TTY) so the terminal remains usable.
+	if fileCfg.Daemonize && !foreground && !daemonChild && isTerminal(os.Stdout.Fd()) {
+		if err := daemonizeSelf(); err != nil {
+			fmt.Fprintf(os.Stderr, "daemonize: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	certFile := resolveRelativeToConfigDir(configPath, fileCfg.TLSCertFile)
 	keyFile := resolveRelativeToConfigDir(configPath, fileCfg.TLSKeyFile)
 	tlsEnabled := strings.TrimSpace(certFile) != "" && strings.TrimSpace(keyFile) != ""
 
+	logFile := resolveRelativeToConfigDir(configPath, fileCfg.LogFile)
+	closeLogs, err := logging.Init(logging.Config{Level: fileCfg.LogLevel, File: logFile, Stdout: fileCfg.LogStdout})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "logging: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = closeLogs() }()
+
 	masterKey, err := config.EnsureMasterKeyFile(fileCfg.MasterKeyFile)
 	if err != nil {
-		log.Fatalf("master key: %v", err)
+		slog.Error("master key", "err", err)
+		os.Exit(1)
 	}
 	sessionSecret := sha256.Sum256(append(append([]byte{}, masterKey...), []byte("atlas:session:v1")...))
 
 	store, err := userdb.Open(fileCfg.UserDBPath, masterKey)
 	if err != nil {
-		log.Fatalf("user db: %v", err)
+		slog.Error("user db", "err", err)
+		os.Exit(1)
 	}
 	if !store.HasAnyUsers() {
-		log.Printf("WARNING: no users in %s; create one via: atlas -config %s user add -user admin -pass <pass>", fileCfg.UserDBPath, configPath)
+		slog.Warn("no users; create one via: atlas -config <cfg> user add -user admin -pass <pass>", "user_db_path", fileCfg.UserDBPath, "config", configPath)
 	}
 
 	cfg := app.Config{
@@ -86,11 +117,14 @@ func main() {
 		ConfigPath:         configPath,
 		ServiceName:        fileCfg.ServiceName,
 		EnableAdminActions: fileCfg.EnableAdminActions,
+		LogPath:            logFile,
+		LogLevel:           fileCfg.LogLevel,
 	}
 
 	srv, err := app.New(cfg)
 	if err != nil {
-		log.Fatalf("init app: %v", err)
+		slog.Error("init app", "err", err)
+		os.Exit(1)
 	}
 
 	httpServer := &http.Server{
@@ -110,12 +144,8 @@ func main() {
 			scheme = "https"
 			httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 		}
-		log.Printf("listening on %s://%s%s", scheme, listenAddr, basePath)
-		if basePath != "" {
-			log.Printf("login: %s://%s%s/login", scheme, listenAddr, basePath)
-		} else {
-			log.Printf("login: %s://%s/login", scheme, listenAddr)
-		}
+		slog.Info("listening", "url", fmt.Sprintf("%s://%s%s", scheme, listenAddr, basePath))
+		slog.Info("login", "url", fmt.Sprintf("%s://%s%s/login", scheme, listenAddr, basePath))
 		var err error
 		if tlsEnabled {
 			err = httpServer.ListenAndServeTLS(certFile, keyFile)
@@ -123,7 +153,8 @@ func main() {
 			err = httpServer.ListenAndServe()
 		}
 		if err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server: %v", err)
+			slog.Error("server", "err", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -152,4 +183,21 @@ func resolveRelativeToConfigDir(configPath, p string) string {
 		return filepath.Clean(p)
 	}
 	return filepath.Join(filepath.Dir(filepath.Clean(configPath)), p)
+}
+
+func daemonizeSelf() error {
+	args := make([]string, 0, len(os.Args)+1)
+	args = append(args, os.Args[1:]...)
+	args = append(args, "-daemon-child")
+	cmd := execCommand(os.Args[0], args...)
+	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer devNull.Close()
+	cmd.Stdin = devNull
+	cmd.Stdout = devNull
+	cmd.Stderr = devNull
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	return cmd.Start()
 }

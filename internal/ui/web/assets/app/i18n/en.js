@@ -248,8 +248,10 @@ export const en = {
   admin: {
     server: "Server",
     users: "Users",
+    logs: "Logs",
     titleServer: "Admin · Server",
     titleUsers: "Admin · Users",
+    titleLogs: "Admin · Logs",
     actions: "Actions",
     restartService: "Restart service",
     reboot: "Reboot",
@@ -310,5 +312,13 @@ export const en = {
       reboot: "reboot",
       shutdown: "shutdown",
     },
+
+    tail: "Tail",
+    autoRefresh: "Auto refresh",
+    downloadLogs: "Download",
+    logsDisabled: "Logging is disabled (log_level=off) or log_file is not configured.",
+    logsPath: "path",
+    logsSize: "size",
+    logsTruncated: "truncated",
   },
 };

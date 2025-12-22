@@ -7,6 +7,10 @@
   "enable_firewall": true,
   "enable_admin_actions": false,
   "service_name": "atlas.service",
+  "daemonize": true,
+  "log_level": "info",
+  "log_file": "/var/lib/atlas/atlas.log",
+  "log_stdout": false,
   "fs_sudo": true,
   "fs_users": [
     "*"
@@ -15,4 +19,3 @@
   "user_db_path": "/var/lib/atlas/atlas.users.db",
   "firewall_db_path": "/var/lib/atlas/atlas.firewall.db"
 }
-

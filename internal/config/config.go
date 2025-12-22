@@ -32,6 +32,17 @@ type Config struct {
 	EnableAdminActions bool   `json:"enable_admin_actions"`
 	ServiceName        string `json:"service_name"`
 
+	// Daemonize detaches the process when started from a TTY (so it doesn't block the shell).
+	// It is ignored when stdout isn't a TTY (e.g. systemd).
+	Daemonize bool `json:"daemonize"`
+
+	// LogLevel controls logging verbosity: "debug", "info", "warn", "error", "off".
+	LogLevel string `json:"log_level"`
+	// LogFile is where logs are written. Relative paths are resolved against the config directory.
+	LogFile string `json:"log_file"`
+	// LogStdout mirrors logs to stdout (default false).
+	LogStdout bool `json:"log_stdout"`
+
 	FSSudo  bool     `json:"fs_sudo"`
 	FSUsers []string `json:"fs_users"`
 
@@ -160,6 +171,12 @@ func (c *Config) applyDefaults(configPath string) {
 	}
 	if c.ServiceName == "" {
 		c.ServiceName = "atlas.service"
+	}
+	if strings.TrimSpace(c.LogLevel) == "" {
+		c.LogLevel = "info"
+	}
+	if strings.TrimSpace(c.LogFile) == "" {
+		c.LogFile = filepath.Join(filepath.Dir(configPath), "atlas.log")
 	}
 	c.FSUsers = normalizeCSV(c.FSUsers)
 }

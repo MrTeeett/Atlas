@@ -52,9 +52,11 @@ export async function renderAdmin(root) {
   const pages = [
     { id: "server", titleKey: "admin.server" },
     { id: "users", titleKey: "admin.users" },
+    { id: "logs", titleKey: "admin.logs" },
   ];
   const navNodes = new Map();
   let page = "server";
+  let cleanup = null;
 
   for (const p of pages) {
     const n = el("div", { class: "item", tabindex: "0", onclick: () => setPage(p.id) }, t(p.titleKey));
@@ -63,6 +65,8 @@ export async function renderAdmin(root) {
   }
 
   function setPage(id) {
+    try { cleanup && cleanup(); } catch {}
+    cleanup = null;
     page = id;
     for (const p of pages) navNodes.get(p.id)?.classList.toggle("active", p.id === id);
     render();
@@ -75,7 +79,8 @@ export async function renderAdmin(root) {
   async function render() {
     replaceMain(el("div", { class: "path" }, t("common.loading")));
     if (page === "server") await renderServer();
-    else await renderUsers();
+    else if (page === "users") await renderUsers();
+    else await renderLogs();
   }
 
   async function renderServer() {
@@ -320,5 +325,72 @@ export async function renderAdmin(root) {
     replaceMain(head, el("div", { class: "card", style: "margin-top:12px;" }, table));
   }
 
+  async function renderLogs() {
+    const head = el("div", { class: "pm-head" },
+      el("div", { class: "pm-title" }, t("admin.titleLogs")),
+      pill(`${t("admin.web")}: ${state.me || "—"}`),
+      el("span", { class: "pm-spacer" }),
+      el("button", { class: "secondary", onclick: () => render() }, t("common.refresh")),
+    );
+
+    const nSel = el("select", { class: "secondary" },
+      el("option", { value: "200" }, "200"),
+      el("option", { value: "500", selected: "selected" }, "500"),
+      el("option", { value: "1000" }, "1000"),
+      el("option", { value: "5000" }, "5000"),
+    );
+    const autoChk = el("input", { type: "checkbox" });
+    let timer = null;
+
+    const meta = el("div", { class: "path" }, "—");
+    const pre = el("pre", { class: "mono", style: "margin:0; padding:10px; max-height:60vh; overflow:auto; background:rgba(0,0,0,.25); border-radius:10px; border:1px solid rgba(255,255,255,.08);" }, "");
+
+    async function load() {
+      const n = Number(nSel.value || "500") || 500;
+      const res = await api(`api/admin/logs?n=${encodeURIComponent(String(n))}`);
+      if (!res.enabled) {
+        meta.textContent = t("admin.logsDisabled");
+        pre.textContent = "";
+        return;
+      }
+      meta.textContent = `${t("admin.logsPath")}: ${res.path || "—"} · ${t("admin.logsSize")}: ${formatBytes(res.size_bytes || 0)}${res.truncated ? ` · ${t("admin.logsTruncated")}` : ""}`;
+      pre.textContent = (res.lines || []).join("\n");
+      pre.scrollTop = pre.scrollHeight;
+    }
+
+    function setAuto(v) {
+      if (timer) { clearInterval(timer); timer = null; }
+      if (v) {
+        timer = setInterval(() => load().catch(() => {}), 2000);
+      }
+    }
+
+    const tools = el("div", { class: "toolbar" },
+      el("span", { class: "path" }, t("admin.tail")),
+      nSel,
+      el("label", { class: "toolbar", style: "gap:8px;" }, autoChk, el("span", { class: "path" }, t("admin.autoRefresh"))),
+      el("span", { class: "pm-spacer" }),
+      el("button", { class: "secondary", onclick: () => window.open("api/admin/logs?download=1", "_blank", "noreferrer") }, t("admin.downloadLogs")),
+    );
+
+    nSel.onchange = () => load().catch((e) => alert(e.message || e));
+    autoChk.onchange = () => setAuto(!!autoChk.checked);
+
+    const card = el("div", { class: "card", style: "margin-top:12px;" }, tools, meta, pre);
+    replaceMain(head, card);
+    await load();
+
+    cleanup = () => setAuto(false);
+  }
+
   setPage(page);
+}
+
+function formatBytes(n) {
+  n = Number(n || 0);
+  if (!isFinite(n) || n <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let u = 0;
+  while (n >= 1024 && u < units.length - 1) { n /= 1024; u++; }
+  return `${n.toFixed(u === 0 ? 0 : 1)} ${units[u]}`;
 }

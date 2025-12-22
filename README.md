@@ -71,6 +71,16 @@ After installing via `.deb/.rpm`:
 sudo systemctl enable --now atlas
 ```
 
+Logging:
+
+- Configure in `atlas.json`: `log_level` (`debug|info|warn|error|off`), `log_file`, `log_stdout`.
+- Admin panel: `Admin` → `Logs` (tail + download).
+
+Daemon mode:
+
+- If `daemonize: true` and Atlas is started from a TTY, it detaches (no stdout spam and the shell stays usable).
+- Run in foreground: `atlas -config /etc/atlas/atlas.json -foreground`
+
 Config and data locations (when installed via `.deb/.rpm`):
 
 - config: `/etc/atlas/atlas.json`
