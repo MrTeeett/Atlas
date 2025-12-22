@@ -74,11 +74,11 @@ jobs:
           set -euo pipefail
           chmod +x packaging/scripts/*.sh
 
-          nfpm package -f packaging/nfpm.yaml -p deb -a amd64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.deb"
-          nfpm package -f packaging/nfpm.yaml -p deb -a arm64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.deb"
+          nfpm package -f packaging/nfpm.yaml -p deb --arch amd64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.deb"
+          nfpm package -f packaging/nfpm.yaml -p deb --arch arm64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.deb"
 
-          nfpm package -f packaging/nfpm.yaml -p rpm -a x86_64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.rpm"
-          nfpm package -f packaging/nfpm.yaml -p rpm -a aarch64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.rpm"
+          nfpm package -f packaging/nfpm.yaml -p rpm --arch x86_64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.rpm"
+          nfpm package -f packaging/nfpm.yaml -p rpm --arch aarch64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.rpm"
 
       - name: Checksums
         run: |
