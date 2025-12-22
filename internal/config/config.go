@@ -43,6 +43,11 @@ type Config struct {
 	// LogStdout mirrors logs to stdout (default false).
 	LogStdout bool `json:"log_stdout"`
 
+	// UpdateRepo is a GitHub repository in form "owner/name".
+	UpdateRepo string `json:"update_repo"`
+	// UpdateChannel selects update source: "auto" (default), "stable", "dev".
+	UpdateChannel string `json:"update_channel"`
+
 	FSSudo  bool     `json:"fs_sudo"`
 	FSUsers []string `json:"fs_users"`
 
@@ -177,6 +182,12 @@ func (c *Config) applyDefaults(configPath string) {
 	}
 	if strings.TrimSpace(c.LogFile) == "" {
 		c.LogFile = filepath.Join(filepath.Dir(configPath), "atlas.log")
+	}
+	if strings.TrimSpace(c.UpdateRepo) == "" {
+		c.UpdateRepo = "MrTeeett/Atlas"
+	}
+	if strings.TrimSpace(c.UpdateChannel) == "" {
+		c.UpdateChannel = "auto"
 	}
 	c.FSUsers = normalizeCSV(c.FSUsers)
 }

@@ -92,3 +92,23 @@ func TestBasePathNormalized(t *testing.T) {
 		t.Fatalf("expected /abc, got %q", cfg.BasePath)
 	}
 }
+
+func TestDefaultsIncludeLoggingAndUpdate(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "atlas.json")
+	if err := os.WriteFile(path, []byte("{\"listen\":\"127.0.0.1:9000\",\"root\":\"/\",\"base_path\":\"/\"}\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LogLevel == "" || cfg.LogFile == "" {
+		t.Fatalf("expected log defaults, got level=%q file=%q", cfg.LogLevel, cfg.LogFile)
+	}
+	if cfg.UpdateRepo == "" || cfg.UpdateChannel == "" {
+		t.Fatalf("expected update defaults, got repo=%q channel=%q", cfg.UpdateRepo, cfg.UpdateChannel)
+	}
+}

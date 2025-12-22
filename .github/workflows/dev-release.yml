@@ -32,8 +32,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/linux_amd64 dist/linux_arm64
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/linux_amd64/atlas ./cmd/atlas
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/linux_arm64/atlas ./cmd/atlas
+          LD="-s -w -X github.com/MrTeeett/atlas/internal/buildinfo.Version=${{ steps.vars.outputs.tag }} -X github.com/MrTeeett/atlas/internal/buildinfo.Channel=dev -X github.com/MrTeeett/atlas/internal/buildinfo.Commit=${GITHUB_SHA} -X github.com/MrTeeett/atlas/internal/buildinfo.BuiltAt=$(date -u +%FT%TZ)"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$LD" -o dist/linux_amd64/atlas ./cmd/atlas
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$LD" -o dist/linux_arm64/atlas ./cmd/atlas
 
       - name: Build tarballs
         run: |

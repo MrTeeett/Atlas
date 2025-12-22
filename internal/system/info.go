@@ -11,12 +11,19 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/MrTeeett/atlas/internal/buildinfo"
 )
 
 type InfoService struct{}
 
 type SystemInfo struct {
 	TimeUnix int64 `json:"time_unix"`
+
+	AtlasVersion string `json:"atlas_version"`
+	AtlasChannel string `json:"atlas_channel"`
+	AtlasCommit  string `json:"atlas_commit"`
+	AtlasBuiltAt string `json:"atlas_built_at"`
 
 	Hostname string `json:"hostname"`
 	OS       string `json:"os"`
@@ -49,6 +56,11 @@ func collectSystemInfo() (SystemInfo, error) {
 
 	return SystemInfo{
 		TimeUnix: time.Now().Unix(),
+
+		AtlasVersion: strings.TrimSpace(buildinfo.Version),
+		AtlasChannel: strings.TrimSpace(buildinfo.Channel),
+		AtlasCommit:  strings.TrimSpace(buildinfo.Commit),
+		AtlasBuiltAt: strings.TrimSpace(buildinfo.BuiltAt),
 
 		Hostname: host,
 		OS:       osName,

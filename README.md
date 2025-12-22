@@ -78,6 +78,12 @@ Logging:
 - Configure in `atlas.json`: `log_level` (`debug|info|warn|error|off`), `log_file`, `log_stdout`.
 - Admin panel: `Admin` → `Logs` (tail + download).
 
+Update:
+
+- In-app updater: `Settings` → `Update`.
+- Stable builds update to the latest GitHub Release tag.
+- Dev builds update from the `dev` tag (assets are replaced on each push to `main`).
+
 Daemon mode:
 
 - If `daemonize: true` and Atlas is started from a TTY, it detaches (no stdout spam and the shell stays usable).

@@ -238,11 +238,77 @@ export async function renderSettings(root) {
   }
 
   // Update (stub)
-  const btnUpdate = el("button", { class: "secondary", onclick: () => alert(t("settings.updateTodo")) }, t("settings.updateStub"));
   const updCard = el("div", { class: "card", style: "margin-top:12px;" },
     el("div", { class: "path" }, t("settings.updateTitle")),
-    el("div", { class: "toolbar" }, btnUpdate),
   );
+  if (!state.isAdmin) {
+    updCard.append(el("div", { class: "path" }, t("settings.httpsOnlyAdmin")));
+  } else {
+    const status = el("div", { class: "path", style: "margin-top:8px;" }, t("common.loading"));
+    const hint = el("div", { class: "path", style: "margin-top:6px;" }, "");
+    const channelSel = el("select", { class: "secondary" },
+      el("option", { value: "auto" }, t("settings.updateChannelAuto")),
+      el("option", { value: "stable" }, t("settings.updateChannelStable")),
+      el("option", { value: "dev" }, t("settings.updateChannelDev")),
+    );
+    const btn = el("button", { class: "secondary" }, t("settings.updateNow"));
+
+    async function reload() {
+      status.textContent = t("common.loading");
+      hint.textContent = "";
+      btn.disabled = true;
+      try {
+        const res = await api("api/admin/update");
+        const ch = (res.channel || "auto").toLowerCase();
+        channelSel.value = (ch === "dev" || ch === "stable" || ch === "auto") ? ch : "auto";
+        const running = !!res.status?.running;
+        const lastErr = res.status?.last_error || "";
+        const targetTag = res.status?.target_tag || "";
+        const ver = res.version || "—";
+        const buildCh = res.build_ch || "—";
+        status.textContent = t("settings.updateStatus", { version: ver, channel: buildCh, target: targetTag || res.resolved || "—" });
+        hint.textContent = lastErr ? `${t("settings.updateLastError")}: ${lastErr}` : t("settings.updateLogsHint");
+        btn.disabled = running || !res.actions_enabled;
+        btn.className = running ? "secondary" : "secondary";
+        btn.textContent = running ? t("settings.updateRunning") : t("settings.updateNow");
+        if (!res.actions_enabled) {
+          hint.textContent = t("settings.autostartEnableHint");
+        }
+      } catch (e) {
+        status.textContent = t("common.error");
+        hint.textContent = e.message || String(e);
+      }
+    }
+
+    btn.onclick = async () => {
+      const ok = confirm(t("settings.updateConfirm"));
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        await api("api/admin/update", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ channel: channelSel.value }),
+        });
+        alert(t("settings.updateStarted"));
+      } catch (e) {
+        alert(e.message || String(e));
+      } finally {
+        await reload();
+      }
+    };
+
+    updCard.append(
+      el("div", { class: "toolbar", style: "margin-top:10px;" },
+        row(t("settings.updateChannel"), channelSel),
+        el("span", { class: "pm-spacer" }),
+        btn,
+      ),
+      status,
+      hint,
+    );
+    await reload();
+  }
 
   wrap.append(themeCard, tlsCard, autostartCard, uninstallCard, updCard);
   root.append(wrap);

@@ -89,4 +89,3 @@ func parseLevel(s string) (lvl slog.Level, enabled bool, _ error) {
 		return slog.LevelInfo, true, errors.New("bad log_level (use debug/info/warn/error/off)")
 	}
 }
-

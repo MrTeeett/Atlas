@@ -132,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/api/admin/autostart", s.requireAPIAuth(s.requireAdmin(s.requireCSRF(http.HandlerFunc(s.HandleAdminAutostart)))))
 	mux.Handle("/api/admin/uninstall", s.requireAPIAuth(s.requireAdmin(s.requireCSRF(http.HandlerFunc(s.HandleAdminUninstall)))))
 	mux.Handle("/api/admin/logs", s.requireAPIAuth(s.requireAdmin(http.HandlerFunc(s.HandleAdminLogs))))
+	mux.Handle("/api/admin/update", s.requireAPIAuth(s.requireAdmin(s.requireCSRF(http.HandlerFunc(s.HandleAdminUpdate)))))
 	mux.Handle("/api/me", s.requireAPIAuth(http.HandlerFunc(s.auth.HandleMe)))
 
 	timeout := http.TimeoutHandler(mux, 60*time.Second, "request timeout")
