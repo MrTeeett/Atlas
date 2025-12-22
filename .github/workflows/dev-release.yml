@@ -1,9 +1,10 @@
-name: release
+name: dev-release-0.0.1
 
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,10 +24,9 @@ jobs:
         id: vars
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
-          PKG_VERSION="${TAG#v}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "pkg_version=${PKG_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=dev" >> "$GITHUB_OUTPUT"
+          echo "pkg_version=0.0.1" >> "$GITHUB_OUTPUT"
+          echo "pkg_release=dev${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
       - name: Build linux binaries
         run: |
@@ -34,9 +34,6 @@ jobs:
           mkdir -p dist/linux_amd64 dist/linux_arm64
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/linux_amd64/atlas ./cmd/atlas
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/linux_arm64/atlas ./cmd/atlas
-          # nfpm uses deb/rpm arch naming for {{ .Arch }} depending on -a:
-          # - deb: amd64/arm64
-          # - rpm: x86_64/aarch64
           mkdir -p dist/linux_x86_64 dist/linux_aarch64
           cp -f dist/linux_amd64/atlas dist/linux_x86_64/atlas
           cp -f dist/linux_arm64/atlas dist/linux_aarch64/atlas
@@ -72,7 +69,7 @@ jobs:
       - name: Build .deb and .rpm
         env:
           PKG_VERSION: ${{ steps.vars.outputs.pkg_version }}
-          PKG_RELEASE: "1"
+          PKG_RELEASE: ${{ steps.vars.outputs.pkg_release }}
         run: |
           set -euo pipefail
           chmod +x packaging/scripts/*.sh
@@ -89,9 +86,30 @@ jobs:
           cp -f install.sh dist/install.sh
           ( cd dist && ls -1 | grep -v '^SHA256SUMS.txt$' | xargs -I{} sha256sum "{}" ) > dist/SHA256SUMS.txt
 
-      - name: Release
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view "${{ steps.vars.outputs.tag }}" >/dev/null 2>&1 || \
+            gh release create "${{ steps.vars.outputs.tag }}" --prerelease --title "${{ steps.vars.outputs.tag }}" \
+              --notes "Development builds. Assets may be replaced on every push to main."
+
+      - name: Delete existing assets (overwrite)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for f in dist/*; do
+            a="$(basename "$f")"
+            gh release delete-asset "${{ steps.vars.outputs.tag }}" "$a" -y >/dev/null 2>&1 || true
+          done
+
+      - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          prerelease: true
           files: |
             dist/*.AppImage
             dist/*.deb
@@ -99,4 +117,3 @@ jobs:
             dist/*.tar.gz
             dist/install.sh
             dist/SHA256SUMS.txt
-          generate_release_notes: true

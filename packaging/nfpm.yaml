@@ -2,7 +2,7 @@ name: atlas
 arch: "{{ .Arch }}"
 platform: linux
 version: "{{ .Env.PKG_VERSION }}"
-release: "1"
+release: "{{ .Env.PKG_RELEASE }}"
 section: admin
 priority: optional
 maintainer: Atlas contributors

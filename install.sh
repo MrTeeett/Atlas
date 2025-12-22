@@ -12,7 +12,7 @@ install.sh [options]
 
 Options:
   --repo owner/name       GitHub repo (default: MrTeeett/atlas)
-  --version vX.Y.Z        Install a specific tag (default: latest)
+  --version <tag>         Install a specific tag (default: latest)
   --method auto|appimage|deb|rpm|tar
   --no-verify             Skip SHA256 verification
   -h, --help              Show help
