@@ -34,12 +34,6 @@ jobs:
           mkdir -p dist/linux_amd64 dist/linux_arm64
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/linux_amd64/atlas ./cmd/atlas
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/linux_arm64/atlas ./cmd/atlas
-          # nfpm uses deb/rpm arch naming for {{ .Arch }} depending on --arch:
-          # - deb: amd64/arm64
-          # - rpm: x86_64/aarch64
-          mkdir -p dist/linux_x86_64 dist/linux_aarch64
-          cp -f dist/linux_amd64/atlas dist/linux_x86_64/atlas
-          cp -f dist/linux_arm64/atlas dist/linux_aarch64/atlas
 
       - name: Build tarballs
         run: |
@@ -77,11 +71,19 @@ jobs:
           set -euo pipefail
           chmod +x packaging/scripts/*.sh
 
-          nfpm package -f packaging/nfpm.yaml -p deb --arch amd64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.deb"
-          nfpm package -f packaging/nfpm.yaml -p deb --arch arm64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.deb"
+          mkcfg() { sed -e "s/__ARCH__/$1/g" -e "s#__BIN__#$2#g" packaging/nfpm.yaml > dist/nfpm.yaml; }
 
-          nfpm package -f packaging/nfpm.yaml -p rpm --arch x86_64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.rpm"
-          nfpm package -f packaging/nfpm.yaml -p rpm --arch aarch64 -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.rpm"
+          mkcfg amd64 dist/linux_amd64/atlas
+          nfpm package -f dist/nfpm.yaml -p deb -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.deb"
+
+          mkcfg arm64 dist/linux_arm64/atlas
+          nfpm package -f dist/nfpm.yaml -p deb -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.deb"
+
+          mkcfg x86_64 dist/linux_amd64/atlas
+          nfpm package -f dist/nfpm.yaml -p rpm -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_amd64.rpm"
+
+          mkcfg aarch64 dist/linux_arm64/atlas
+          nfpm package -f dist/nfpm.yaml -p rpm -t "dist/atlas_${{ steps.vars.outputs.tag }}_linux_arm64.rpm"
 
       - name: Checksums
         run: |

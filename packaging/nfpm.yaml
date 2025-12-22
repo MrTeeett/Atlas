@@ -1,5 +1,5 @@
 name: atlas
-arch: "{{ .Arch }}"
+arch: "__ARCH__"
 platform: linux
 version: "{{ .Env.PKG_VERSION }}"
 release: "{{ .Env.PKG_RELEASE }}"
@@ -10,7 +10,7 @@ description: Atlas web panel for server management
 homepage: https://github.com/MrTeeett/atlas
 
 contents:
-  - src: dist/linux_{{ .Arch }}/atlas
+  - src: "__BIN__"
     dst: /usr/bin/atlas
     file_info:
       mode: 0755
