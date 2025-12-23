@@ -166,15 +166,10 @@ export async function renderMonitor(root, initialPage) {
     const h = ctx.canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    const padLeft = 58 * dpr;
     const padRight = 12 * dpr;
     const padTop = 12 * dpr;
     const padBottom = 30 * dpr;
 
-    const innerW = Math.max(1, w - padLeft - padRight);
-    const innerH = Math.max(1, h - padTop - padBottom);
-
-    // Grid + Y labels
     ctx.strokeStyle = "rgba(255,255,255,.12)";
     ctx.lineWidth = 1 * dpr;
     ctx.fillStyle = "rgba(255,255,255,.78)";
@@ -183,15 +178,30 @@ export async function renderMonitor(root, initialPage) {
     ctx.textAlign = "right";
 
     const ticksY = Number(opts.ticksY ?? 5);
+    const labelsY = [];
+    let maxLabelWidth = 0;
+    for (let i = 0; i < ticksY; i++) {
+      const t = ticksY <= 1 ? 0 : i / (ticksY - 1);
+      const value = maxY - t * (maxY - minY);
+      const label = formatY(value);
+      labelsY.push(label);
+      const wLabel = ctx.measureText(label).width;
+      if (wLabel > maxLabelWidth) maxLabelWidth = wLabel;
+    }
+
+    const padLeft = Math.max(58 * dpr, maxLabelWidth + 14 * dpr);
+    const innerW = Math.max(1, w - padLeft - padRight);
+    const innerH = Math.max(1, h - padTop - padBottom);
+
+    // Grid + Y labels
     for (let i = 0; i < ticksY; i++) {
       const t = ticksY <= 1 ? 0 : i / (ticksY - 1);
       const y = padTop + t * innerH;
-      const value = maxY - t * (maxY - minY);
       ctx.beginPath();
       ctx.moveTo(padLeft, y);
       ctx.lineTo(w - padRight, y);
       ctx.stroke();
-      ctx.fillText(formatY(value), padLeft - 8 * dpr, y);
+      ctx.fillText(labelsY[i] ?? "", padLeft - 8 * dpr, y);
     }
 
     // X grid + labels
