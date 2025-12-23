@@ -45,6 +45,9 @@ type User struct {
 	FSSudo   bool     `json:"fs_sudo,omitempty"`
 	FSAny    bool     `json:"fs_any,omitempty"`
 	FSUsers  []string `json:"fs_users,omitempty"`
+
+	SudoNonce string `json:"sudo_nonce,omitempty"`
+	SudoEnc   string `json:"sudo_enc,omitempty"`
 }
 
 type envelope struct {
@@ -219,6 +222,69 @@ func (s *Store) SetPermissions(user string, role string, canExec bool, canProcs 
 	rec.FSUsers = normalizeCSV(fsUsers)
 	s.db.Users[user] = rec
 	return s.saveLocked()
+}
+
+func (s *Store) SetSudoPassword(user string, pass string) error {
+	user = strings.TrimSpace(user)
+	if user == "" {
+		return errors.New("user is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.reloadIfChangedLocked(); err != nil {
+		return err
+	}
+	rec, ok := s.db.Users[user]
+	if !ok {
+		return errors.New("user not found")
+	}
+	if strings.TrimSpace(pass) == "" {
+		rec.SudoNonce = ""
+		rec.SudoEnc = ""
+		s.db.Users[user] = rec
+		return s.saveLocked()
+	}
+	nonce := make([]byte, s.aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return err
+	}
+	enc := s.aead.Seal(nil, nonce, []byte(pass), nil)
+	rec.SudoNonce = base64.RawStdEncoding.EncodeToString(nonce)
+	rec.SudoEnc = base64.RawStdEncoding.EncodeToString(enc)
+	s.db.Users[user] = rec
+	return s.saveLocked()
+}
+
+func (s *Store) GetSudoPassword(user string) (string, bool, error) {
+	user = strings.TrimSpace(user)
+	if user == "" {
+		return "", false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.reloadIfChangedLocked(); err != nil {
+		return "", false, err
+	}
+	rec, ok := s.db.Users[user]
+	if !ok {
+		return "", false, nil
+	}
+	if rec.SudoNonce == "" || rec.SudoEnc == "" {
+		return "", false, nil
+	}
+	nonce, err := base64.RawStdEncoding.DecodeString(rec.SudoNonce)
+	if err != nil {
+		return "", false, err
+	}
+	enc, err := base64.RawStdEncoding.DecodeString(rec.SudoEnc)
+	if err != nil {
+		return "", false, err
+	}
+	plain, err := s.aead.Open(nil, nonce, enc, nil)
+	if err != nil {
+		return "", false, err
+	}
+	return string(plain), true, nil
 }
 
 func (s *Store) DeleteUser(user string) error {

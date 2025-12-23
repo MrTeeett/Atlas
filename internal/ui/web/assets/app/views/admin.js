@@ -52,6 +52,7 @@ export async function renderAdmin(root) {
   const pages = [
     { id: "server", titleKey: "admin.server" },
     { id: "users", titleKey: "admin.users" },
+    { id: "sudo", titleKey: "admin.sudo" },
     { id: "logs", titleKey: "admin.logs" },
   ];
   const navNodes = new Map();
@@ -80,6 +81,7 @@ export async function renderAdmin(root) {
     replaceMain(el("div", { class: "path" }, t("common.loading")));
     if (page === "server") await renderServer();
     else if (page === "users") await renderUsers();
+    else if (page === "sudo") await renderSudo();
     else await renderLogs();
   }
 
@@ -323,6 +325,60 @@ export async function renderAdmin(root) {
     }
 
     replaceMain(head, el("div", { class: "card", style: "margin-top:12px;" }, table));
+  }
+
+  async function renderSudo() {
+    const head = el("div", { class: "pm-head" },
+      el("div", { class: "pm-title" }, t("admin.titleSudo")),
+      pill(`${t("admin.web")}: ${state.me || "—"}`),
+      el("span", { class: "pm-spacer" }),
+      el("button", { class: "secondary", onclick: () => render() }, t("common.refresh")),
+    );
+
+    const info = await api("api/admin/sudo");
+    const hasPass = !!info?.has_password;
+
+    const status = pill(hasPass ? t("admin.sudoSet") : t("admin.sudoNotSet"));
+    const input = el("input", { type: "password", class: "mono", placeholder: t("admin.sudoPlaceholder") });
+    const saveBtn = el("button", {
+      class: "secondary",
+      onclick: async () => {
+        if (!input.value) { alert(t("admin.sudoRequired")); return; }
+        await api("api/admin/sudo", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ password: input.value }),
+        });
+        input.value = "";
+        await render();
+      },
+    }, t("admin.sudoSave"));
+    const clearBtn = el("button", {
+      class: "danger",
+      onclick: async () => {
+        if (!confirm(t("admin.sudoClearConfirm"))) return;
+        await api("api/admin/sudo", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ clear: true }),
+        });
+        input.value = "";
+        await render();
+      },
+    }, t("admin.sudoClear"));
+
+    const card = el("div", { class: "card", style: "margin-top:12px;" },
+      el("div", { class: "path" }, t("admin.sudoHint")),
+      el("div", { class: "toolbar" }, status, el("span", { class: "pm-spacer" })),
+      el("div", { class: "toolbar" },
+        el("span", { class: "path" }, t("admin.sudoPassword")),
+        input,
+        saveBtn,
+        clearBtn,
+      ),
+    );
+
+    replaceMain(head, card);
   }
 
   async function renderLogs() {

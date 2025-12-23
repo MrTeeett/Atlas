@@ -25,16 +25,18 @@ type Config struct {
 	SudoAny      bool
 	SudoUsers    []string
 	HelperBinary string
+	SudoPassword func(user string) (string, bool, error)
 }
 
 type Service struct {
-	root        string
-	sudoEnabled bool
-	sudoAny     bool
-	sudoUsers   map[string]bool
-	selfUser    string
-	helperPath  string
-	sudoPath    string
+	root         string
+	sudoEnabled  bool
+	sudoAny      bool
+	sudoUsers    map[string]bool
+	selfUser     string
+	helperPath   string
+	sudoPath     string
+	sudoPassword func(user string) (string, bool, error)
 }
 
 type Entry struct {
@@ -84,13 +86,14 @@ func New(cfg Config) *Service {
 	}
 	sudoPath, _ := exec.LookPath("sudo")
 	return &Service{
-		root:        filepath.Clean(root),
-		sudoEnabled: cfg.SudoEnabled,
-		sudoAny:     cfg.SudoAny,
-		sudoUsers:   sudoUsers,
-		selfUser:    lookupSelfUser(),
-		helperPath:  helperPath,
-		sudoPath:    sudoPath,
+		root:         filepath.Clean(root),
+		sudoEnabled:  cfg.SudoEnabled,
+		sudoAny:      cfg.SudoAny,
+		sudoUsers:    sudoUsers,
+		selfUser:     lookupSelfUser(),
+		helperPath:   helperPath,
+		sudoPath:     sudoPath,
+		sudoPassword: cfg.SudoPassword,
 	}
 }
 

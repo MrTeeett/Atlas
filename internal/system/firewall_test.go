@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -113,14 +114,16 @@ func TestFirewallRulesHandlers(t *testing.T) {
 	}
 }
 
-func TestFirewallApplyWhenEnabledButNoNft(t *testing.T) {
+func TestFirewallApplyNoBackend(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "fw.db")
 
 	s := NewFirewallService(FirewallConfig{Enabled: true, DBPath: dbPath})
-	s.nftPath = "" // ensure apply fails safely
+	s.nftPath = ""
+	s.ufwPath = ""
+	s.fwCmdPath = ""
 
 	req := httptest.NewRequest(http.MethodPost, "http://example/api/firewall/apply", nil)
 	rr := httptest.NewRecorder()
@@ -171,6 +174,159 @@ exit 0
 	}
 }
 
+func TestParseUFWStatus(t *testing.T) {
+	t.Parallel()
+
+	out := `Status: active
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW       Anywhere
+1000:1002/udp              DENY        1.2.3.4
+OpenSSH                    ALLOW       Anywhere (v6)
+`
+	active, rules := parseUFWStatus(out)
+	if !active {
+		t.Fatalf("expected active")
+	}
+	if len(rules) != 3 {
+		t.Fatalf("expected 3 rules, got %d", len(rules))
+	}
+	if !rules[2].V6 {
+		t.Fatalf("expected v6 rule")
+	}
+}
+
+func TestUfwRuleToFWRule(t *testing.T) {
+	t.Parallel()
+
+	rule, ok := ufwRuleToFWRule(UFWRule{To: "22/tcp", Action: "ALLOW"})
+	if !ok || rule.Type != "allow" || rule.Proto != "tcp" || rule.PortFrom != 22 || rule.PortTo != 22 {
+		t.Fatalf("unexpected rule: ok=%v rule=%#v", ok, rule)
+	}
+	rule, ok = ufwRuleToFWRule(UFWRule{To: "1000:1002/udp", Action: "DENY"})
+	if !ok || rule.Type != "deny" || rule.Proto != "udp" || rule.PortFrom != 1000 || rule.PortTo != 1002 {
+		t.Fatalf("unexpected range rule: ok=%v rule=%#v", ok, rule)
+	}
+	rule, ok = ufwRuleToFWRule(UFWRule{To: "OpenSSH", Action: "ALLOW"})
+	if !ok || rule.Service != "OpenSSH" || rule.Type != "allow" {
+		t.Fatalf("unexpected service rule: ok=%v rule=%#v", ok, rule)
+	}
+	if _, ok := ufwRuleToFWRule(UFWRule{To: "Anywhere", Action: "ALLOW"}); ok {
+		t.Fatalf("expected Anywhere to be ignored")
+	}
+}
+
+func TestParseFirewalldSpecs(t *testing.T) {
+	t.Parallel()
+
+	from, to, proto, ok := parseFirewalldPort("1000-1002/udp")
+	if !ok || from != 1000 || to != 1002 || proto != "udp" {
+		t.Fatalf("unexpected port parse: ok=%v %d-%d %s", ok, from, to, proto)
+	}
+	port, proto, toPort, ok := parseFirewalldForward("port=80:proto=tcp:toport=8080:toaddr=1.2.3.4")
+	if !ok || port != 80 || proto != "tcp" || toPort != 8080 {
+		t.Fatalf("unexpected forward parse: ok=%v port=%d proto=%s to=%d", ok, port, proto, toPort)
+	}
+}
+
+func TestRuleFromCreateService(t *testing.T) {
+	t.Parallel()
+
+	s := NewFirewallService(FirewallConfig{Enabled: true})
+	rule, err := s.ruleFromCreate(createRuleRequest{Enabled: true, Type: "allow", Service: "ssh"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rule.Service != "ssh" || rule.Proto != "any" {
+		t.Fatalf("unexpected service rule: %#v", rule)
+	}
+	_, err = s.ruleFromCreate(createRuleRequest{Enabled: true, Type: "redirect", Service: "ssh"})
+	if err == nil {
+		t.Fatalf("expected error for redirect service")
+	}
+}
+
+func TestApplyUfwRuleArgs(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("needs shell script")
+	}
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "ufw.log")
+	ufwPath := writeScript(t, dir, "ufw.sh", `#!/bin/sh
+echo "$@" >> "`+logPath+`"
+exit 0
+`)
+	s := NewFirewallService(FirewallConfig{Enabled: true})
+	s.ufwPath = ufwPath
+	s.sudoPath = ""
+
+	rule := FWRule{Type: "allow", Proto: "tcp", PortFrom: 22, PortTo: 22}
+	if err := s.applyUfwRule(context.Background(), rule, true); err != nil {
+		t.Fatalf("applyUfwRule enable: %v", err)
+	}
+	if err := s.applyUfwRule(context.Background(), rule, false); err != nil {
+		t.Fatalf("applyUfwRule disable: %v", err)
+	}
+
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	log := string(b)
+	if !bytes.Contains(b, []byte("allow 22/tcp")) {
+		t.Fatalf("expected allow line, got %q", log)
+	}
+	if !bytes.Contains(b, []byte("--force delete allow 22/tcp")) {
+		t.Fatalf("expected delete line, got %q", log)
+	}
+}
+
+func TestReadFirewalldRules(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("needs shell script")
+	}
+
+	dir := t.TempDir()
+	fwPath := writeScript(t, dir, "firewall-cmd.sh", `#!/bin/sh
+case "$*" in
+  *"--get-default-zone"*) echo "public";;
+  *"--get-active-zones"*) echo "public";;
+  *"--list-ports"*) echo "22/tcp 1000-1002/udp";;
+  *"--list-services"*) echo "ssh http";;
+  *"--list-forward-ports"*) echo "port=80:proto=tcp:toport=8080";;
+  *"--list-rich-rules"*) echo "rule port port=\"53\" protocol=\"udp\" drop";;
+  *) ;;
+esac
+exit 0
+`)
+	s := NewFirewallService(FirewallConfig{Enabled: true})
+	s.fwCmdPath = fwPath
+	s.sudoPath = ""
+
+	rules, err := s.readFirewalldRules(context.Background())
+	if err != nil {
+		t.Fatalf("readFirewalldRules: %v", err)
+	}
+	if !hasRule(rules, FWRule{Type: "allow", Proto: "tcp", PortFrom: 22, PortTo: 22}) {
+		t.Fatalf("missing allow 22/tcp rule: %#v", rules)
+	}
+	if !hasRule(rules, FWRule{Type: "allow", Proto: "udp", PortFrom: 1000, PortTo: 1002}) {
+		t.Fatalf("missing allow 1000-1002/udp rule: %#v", rules)
+	}
+	if !hasRule(rules, FWRule{Type: "allow", Proto: "any", Service: "ssh"}) {
+		t.Fatalf("missing service ssh rule: %#v", rules)
+	}
+	if !hasRule(rules, FWRule{Type: "redirect", Proto: "tcp", PortFrom: 80, PortTo: 80, ToPort: 8080}) {
+		t.Fatalf("missing redirect rule: %#v", rules)
+	}
+	if !hasRule(rules, FWRule{Type: "deny", Proto: "udp", PortFrom: 53, PortTo: 53}) {
+		t.Fatalf("missing deny rule: %#v", rules)
+	}
+}
+
 func TestPortUsageWithFakeSS(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
@@ -198,6 +354,25 @@ OUT
 	if resp.Error != "" || len(resp.Items) != 1 || resp.Items[0].PID != 99 || resp.Items[0].Process != "sshd" {
 		t.Fatalf("resp=%#v", resp)
 	}
+}
+
+func hasRule(rules []FWRule, want FWRule) bool {
+	for _, r := range rules {
+		if r.Type != want.Type {
+			continue
+		}
+		if strings.ToLower(r.Proto) != strings.ToLower(want.Proto) {
+			continue
+		}
+		if r.PortFrom != want.PortFrom || r.PortTo != want.PortTo || r.ToPort != want.ToPort {
+			continue
+		}
+		if strings.TrimSpace(r.Service) != strings.TrimSpace(want.Service) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func writeScript(t *testing.T, dir, name, content string) string {

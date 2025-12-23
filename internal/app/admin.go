@@ -25,6 +25,8 @@ type adminStore interface {
 	UpsertUser(user, pass string) error
 	DeleteUser(user string) error
 	SetPermissions(user string, role string, canExec bool, canProcs bool, canFW bool, fsSudo bool, fsAny bool, fsUsers []string) error
+	SetSudoPassword(user string, pass string) error
+	GetSudoPassword(user string) (string, bool, error)
 }
 
 func (s *Server) adminStore() (adminStore, error) {

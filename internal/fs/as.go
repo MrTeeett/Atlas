@@ -221,7 +221,13 @@ func (s *Service) openForDownloadAs(ctx context.Context, as string, clientPath s
 		return nil, time.Time{}, err
 	}
 
-	cmd := s.sudoCmd(ctx, as, "cat", "--path", clientPath)
+	cmd, pass, err := s.sudoCmdWithPassword(ctx, as, "cat", "--path", clientPath)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	if pass != "" {
+		cmd.Stdin = strings.NewReader(pass + "\n")
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, time.Time{}, err
@@ -249,8 +255,15 @@ func (s *Service) saveUploadedFileAs(ctx context.Context, as string, dirAbs stri
 	}
 	defer file.Close()
 
-	cmd := s.sudoCmd(ctx, as, "write", "--dir", s.clientPath(dirAbs), "--name", name)
-	cmd.Stdin = file
+	cmd, pass, err := s.sudoCmdWithPassword(ctx, as, "write", "--dir", s.clientPath(dirAbs), "--name", name)
+	if err != nil {
+		return err
+	}
+	if pass != "" {
+		cmd.Stdin = io.MultiReader(strings.NewReader(pass+"\n"), file)
+	} else {
+		cmd.Stdin = file
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -368,12 +381,21 @@ func (s *Service) sudoCmd(ctx context.Context, as string, op string, args ...str
 }
 
 func (s *Service) runHelper(ctx context.Context, as string, stdout io.Writer, stdin io.Reader, op string, args ...string) error {
-	cmd := s.sudoCmd(ctx, as, op, args...)
+	cmd, pass, err := s.sudoCmdWithPassword(ctx, as, op, args...)
+	if err != nil {
+		return err
+	}
 	if stdout != nil {
 		cmd.Stdout = stdout
 	}
 	if stdin != nil {
-		cmd.Stdin = stdin
+		if pass != "" {
+			cmd.Stdin = io.MultiReader(strings.NewReader(pass+"\n"), stdin)
+		} else {
+			cmd.Stdin = stdin
+		}
+	} else if pass != "" {
+		cmd.Stdin = strings.NewReader(pass + "\n")
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -384,6 +406,35 @@ func (s *Service) runHelper(ctx context.Context, as string, stdout io.Writer, st
 		return err
 	}
 	return nil
+}
+
+func (s *Service) sudoCmdWithPassword(ctx context.Context, as string, op string, args ...string) (*exec.Cmd, string, error) {
+	if s.sudoPath == "" {
+		return nil, "", errors.New("sudo is not available")
+	}
+	pass, ok, err := s.sudoPassFor(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if ok && pass != "" {
+		cmdArgs := []string{"-S", "-p", "", "-u", as, s.helperPath, "fs-helper", "--root", s.root, op}
+		cmdArgs = append(cmdArgs, args...)
+		return exec.CommandContext(ctx, s.sudoPath, cmdArgs...), pass, nil
+	}
+	cmdArgs := []string{"-n", "-u", as, s.helperPath, "fs-helper", "--root", s.root, op}
+	cmdArgs = append(cmdArgs, args...)
+	return exec.CommandContext(ctx, s.sudoPath, cmdArgs...), "", nil
+}
+
+func (s *Service) sudoPassFor(ctx context.Context) (string, bool, error) {
+	if s.sudoPassword == nil {
+		return "", false, nil
+	}
+	c, ok := auth.ClaimsFromContext(ctx)
+	if !ok || strings.TrimSpace(c.User) == "" {
+		return "", false, nil
+	}
+	return s.sudoPassword(c.User)
 }
 
 func normalizeClientPath(p string) string {

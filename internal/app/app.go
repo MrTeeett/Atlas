@@ -63,7 +63,7 @@ func New(cfg Config) (*Server, error) {
 		stats:     system.NewStatsService(),
 		info:      system.NewInfoService(),
 		autostart: system.NewAutostartService(),
-		fs:        filesvc.New(filesvc.Config{RootDir: cfg.RootDir, SudoEnabled: cfg.FSSudoEnabled, SudoAny: cfg.FSSudoAny, SudoUsers: cfg.FSSudoUsers}),
+		fs:        filesvc.New(filesvc.Config{RootDir: cfg.RootDir, SudoEnabled: cfg.FSSudoEnabled, SudoAny: cfg.FSSudoAny, SudoUsers: cfg.FSSudoUsers, SudoPassword: sudoPasswordProvider(cfg.AuthStore)}),
 		process:   system.NewProcessService(),
 		exec:      system.NewExecService(system.ExecConfig{Enabled: cfg.EnableExec}),
 		term: system.NewTerminalService(system.TerminalConfig{
@@ -73,10 +73,32 @@ func New(cfg Config) (*Server, error) {
 			SudoUsers:   cfg.FSSudoUsers,
 		}),
 		fw: system.NewFirewallService(system.FirewallConfig{
-			Enabled: cfg.EnableFW,
-			DBPath:  cfg.FWDBPath,
+			Enabled:      cfg.EnableFW,
+			DBPath:       cfg.FWDBPath,
+			SudoPassword: sudoPasswordProvider(cfg.AuthStore),
 		}),
 	}, nil
+}
+
+func sudoPasswordProvider(store auth.Store) func(user string) (string, bool, error) {
+	type sudoStore interface {
+		GetUser(user string) (auth.UserInfo, bool, error)
+		GetSudoPassword(user string) (string, bool, error)
+	}
+	st, ok := store.(sudoStore)
+	if !ok {
+		return nil
+	}
+	return func(user string) (string, bool, error) {
+		info, ok, err := st.GetUser(user)
+		if err != nil || !ok {
+			return "", false, err
+		}
+		if strings.ToLower(strings.TrimSpace(info.Role)) != "admin" {
+			return "", false, nil
+		}
+		return st.GetSudoPassword(user)
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -133,6 +155,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/api/admin/uninstall", s.requireAPIAuth(s.requireAdmin(s.requireCSRF(http.HandlerFunc(s.HandleAdminUninstall)))))
 	mux.Handle("/api/admin/logs", s.requireAPIAuth(s.requireAdmin(http.HandlerFunc(s.HandleAdminLogs))))
 	mux.Handle("/api/admin/update", s.requireAPIAuth(s.requireAdmin(s.requireCSRF(http.HandlerFunc(s.HandleAdminUpdate)))))
+	mux.Handle("/api/admin/sudo", s.requireAPIAuth(s.requireAdmin(s.requireCSRF(http.HandlerFunc(s.HandleAdminSudo)))))
 	mux.Handle("/api/me", s.requireAPIAuth(http.HandlerFunc(s.auth.HandleMe)))
 
 	timeout := http.TimeoutHandler(mux, 60*time.Second, "request timeout")

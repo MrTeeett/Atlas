@@ -101,4 +101,3 @@ func TestExtractTarGzFile(t *testing.T) {
 		t.Fatalf("unexpected output: %q", string(b))
 	}
 }
-

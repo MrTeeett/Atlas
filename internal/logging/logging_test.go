@@ -57,4 +57,3 @@ func TestParseLevelInvalid(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 }
-

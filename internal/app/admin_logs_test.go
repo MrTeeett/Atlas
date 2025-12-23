@@ -55,4 +55,3 @@ func TestHandleAdminLogsDisabled(t *testing.T) {
 		t.Fatalf("expected disabled")
 	}
 }
-

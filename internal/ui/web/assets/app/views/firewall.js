@@ -55,11 +55,13 @@ export async function renderFirewall(root) {
     const enabled = !!st.db_enabled;
     const active = !!st.active;
     const tool = st.tool || "—";
+    const extTool = st.external_tool || "";
+    const isSystemTool = tool === "firewall-cmd" || tool === "ufw";
 
     const statusRow = el("div", { class: "toolbar" },
       pill(`${t("firewall.tool")}: ${tool}`),
-      pill(`${t("firewall.active")}: ${active ? t("common.yes") : t("common.no")}`),
-      pill(`${t("firewall.enabled")}: ${enabled ? t("common.yes") : t("common.no")}`),
+      pill(`${t(isSystemTool ? "firewall.systemActive" : "firewall.active")}: ${active ? t("common.yes") : t("common.no")}`),
+      pill(`${t(isSystemTool ? "firewall.atlasEnabled" : "firewall.enabled")}: ${enabled ? t("common.yes") : t("common.no")}`),
       pill(`${t("firewall.euid")}: ${st.euid}`),
       pill(st.has_sudo ? `${t("firewall.sudo")}: ${t("common.yes")}` : `${t("firewall.sudo")}: ${t("common.no")}`),
       el("span", { class: "pm-spacer" }),
@@ -73,7 +75,9 @@ export async function renderFirewall(root) {
           });
           await load();
         },
-      }, enabled ? t("firewall.disable") : t("firewall.enable")),
+      }, enabled
+        ? (isSystemTool ? t("firewall.disableAtlas") : t("firewall.disable"))
+        : (isSystemTool ? t("firewall.enableAtlas") : t("firewall.enable"))),
       el("button", {
         class: "secondary",
         onclick: async () => { await api("api/firewall/apply", { method: "POST" }); await load(); },
@@ -82,20 +86,33 @@ export async function renderFirewall(root) {
       el("button", { class: "secondary", onclick: () => load() }, t("common.refresh")),
     );
 
-    const note = !st.config_enabled
-      ? dangerText(t("firewall.configDisabled"))
-      : st.error ? dangerText(st.error) : null;
+    const notes = [];
+    if (!st.config_enabled) notes.push(dangerText(t("firewall.configDisabled")));
+    if (st.error) notes.push(dangerText(st.error));
+    if (isSystemTool) {
+      notes.push(el("div", { class: "path" }, t("firewall.atlasNote", { tool })));
+    }
+    if (extTool) {
+      if (st.external_error) {
+        notes.push(dangerText(t("firewall.externalError", { tool: extTool, err: st.external_error })));
+      } else {
+        notes.push(el("div", { class: "path" }, t("firewall.externalActive", { tool: extTool })));
+      }
+    }
 
     return el("div", { class: "card", style: "margin-top:12px;" },
       el("div", { class: "path" }, t("firewall.statusTitle")),
       statusRow,
-      note || el("div", { style: "height:0px;" }),
+      notes.length ? el("div", {}, ...notes) : el("div", { style: "height:0px;" }),
     );
   }
 
   function ruleRow(r, onToggle, onEdit, onDelete, onPortLookup) {
+    const hasService = !!(r.service && String(r.service).trim());
     const ports = r.port_from === r.port_to ? String(r.port_from) : `${r.port_from}-${r.port_to}`;
-    const descr = r.type === "redirect" ? `${ports} → ${r.to_port}` : ports;
+    const descr = hasService
+      ? `service:${r.service}`
+      : (r.type === "redirect" ? `${ports} → ${r.to_port}` : ports);
     return el("tr", {},
       el("td", {}, el("input", {
         type: "checkbox",
@@ -107,8 +124,8 @@ export async function renderFirewall(root) {
       el("td", { class: "mono" }, descr),
       el("td", {}, r.comment || ""),
       el("td", { style: "text-align:right; white-space:nowrap;" },
-        el("button", { class: "secondary", onclick: () => onPortLookup(r.type === "redirect" ? r.to_port : r.port_from, r.proto) }, t("firewall.whoUsesPort")),
-        " ",
+        hasService ? null : el("button", { class: "secondary", onclick: () => onPortLookup(r.type === "redirect" ? r.to_port : r.port_from, r.proto) }, t("firewall.whoUsesPort")),
+        hasService ? null : " ",
         el("button", { class: "secondary", onclick: onEdit }, t("common.edit")),
         " ",
         el("button", { class: "danger", onclick: onDelete }, t("common.delete")),
@@ -116,9 +133,53 @@ export async function renderFirewall(root) {
     );
   }
 
+  function renderExternalRules(rulesResp) {
+    const tool = rulesResp.external_tool;
+    if (!tool) return null;
+    const rules = rulesResp.external_rules || [];
+    const title = t("firewall.externalTitle", { tool });
+
+    let note = null;
+    if (rulesResp.external_error) {
+      note = dangerText(t("firewall.externalError", { tool, err: rulesResp.external_error }));
+    } else if (!rulesResp.external_active) {
+      note = el("div", { class: "path" }, t("firewall.externalInactive", { tool }));
+    } else if (!rules.length) {
+      note = el("div", { class: "path" }, t("firewall.externalEmpty", { tool }));
+    }
+
+    const table = el("table", {},
+      el("thead", {}, el("tr", {},
+        el("th", {}, t("firewall.externalThTo")),
+        el("th", {}, t("firewall.externalThAction")),
+        el("th", {}, t("firewall.externalThFrom")),
+        el("th", { style: "text-align:right" }, t("firewall.externalThV6")),
+      )),
+    );
+    const tbody = el("tbody");
+    table.append(tbody);
+    for (const r of rules) {
+      tbody.append(el("tr", {},
+        el("td", { class: "mono" }, r.to || ""),
+        el("td", {}, r.action || ""),
+        el("td", { class: "mono" }, r.from || ""),
+        el("td", { style: "text-align:right" }, r.v6 ? "v6" : ""),
+      ));
+    }
+
+    return el("div", { class: "card", style: "margin-top:12px;" },
+      el("div", { class: "path" }, title),
+      note || el("div", { style: "height:0px;" }),
+      rules.length ? table : null,
+    );
+  }
+
   function renderRules(st, rulesResp) {
     const enabled = !!rulesResp.enabled;
     const rules = rulesResp.rules || [];
+    const tool = st.tool || "";
+    const isSystemTool = tool === "firewall-cmd" || tool === "ufw";
+    const allowService = tool === "firewall-cmd" || tool === "ufw";
 
     const addBtn = el("button", {
       onclick: () => openAddEdit(),
@@ -169,18 +230,27 @@ export async function renderFirewall(root) {
       for (const v of ["tcp", "udp"]) protoSel.append(el("option", { value: v }, v));
       const portsIn = el("input", { class: "mono", placeholder: t("firewall.portsPlaceholder") });
       const toPortIn = el("input", { class: "mono", type: "number", placeholder: t("firewall.toPortPlaceholder"), min: "1", max: "65535" });
+      const serviceIn = el("input", { class: "mono", placeholder: t("firewall.servicePlaceholder") });
       const enabledIn = el("input", { type: "checkbox" });
       const commentIn = el("input", { placeholder: t("firewall.commentPlaceholder") });
 
       function syncVisibility() {
-        toPortIn.style.display = typeSel.value === "redirect" ? "" : "none";
+        const useService = allowService && !!serviceIn.value.trim();
+        portsIn.disabled = useService;
+        toPortIn.style.display = typeSel.value === "redirect" && !useService ? "" : "none";
       }
       typeSel.addEventListener("change", syncVisibility);
+      serviceIn.addEventListener("input", syncVisibility);
 
       if (rule) {
         typeSel.value = rule.type || "allow";
         protoSel.value = rule.proto || "tcp";
-        portsIn.value = rule.port_from === rule.port_to ? String(rule.port_from) : `${rule.port_from}-${rule.port_to}`;
+        if (rule.service) {
+          portsIn.value = "";
+          serviceIn.value = rule.service;
+        } else {
+          portsIn.value = rule.port_from === rule.port_to ? String(rule.port_from) : `${rule.port_from}-${rule.port_to}`;
+        }
         toPortIn.value = rule.to_port || "";
         enabledIn.checked = !!rule.enabled;
         commentIn.value = rule.comment || "";
@@ -188,6 +258,10 @@ export async function renderFirewall(root) {
         typeSel.value = "allow";
         protoSel.value = "tcp";
         enabledIn.checked = true;
+      }
+      if (!allowService) {
+        serviceIn.disabled = true;
+        serviceIn.value = "";
       }
       syncVisibility();
 
@@ -198,6 +272,7 @@ export async function renderFirewall(root) {
           el("div", { class: "toolbar" }, el("span", { class: "path" }, t("firewall.proto")), protoSel),
           el("div", { class: "toolbar" }, el("span", { class: "path" }, t("firewall.ports")), portsIn),
           el("div", { class: "toolbar" }, el("span", { class: "path" }, t("firewall.redirectTo")), toPortIn),
+          el("div", { class: "toolbar" }, el("span", { class: "path" }, t("firewall.serviceLabel")), serviceIn),
         ),
         el("div", {},
           el("div", { class: "path" }, t("firewall.optionsTitle")),
@@ -211,13 +286,22 @@ export async function renderFirewall(root) {
         el("button", { class: "secondary", onclick: () => m.close() }, t("common.cancel")),
         el("button", {
           onclick: async () => {
-            const ports = parsePortsInput(portsIn.value);
-            if (!ports) { alert(t("firewall.badPorts")); return; }
+            const service = serviceIn.value.trim();
+            if (service && typeSel.value === "redirect") {
+              alert(t("firewall.badServiceRedirect"));
+              return;
+            }
+            let ports = "";
+            if (!service) {
+              ports = parsePortsInput(portsIn.value);
+              if (!ports) { alert(t("firewall.badPorts")); return; }
+            }
             const payload = {
               type: typeSel.value,
               proto: protoSel.value,
               ports,
               to_port: Number(toPortIn.value || 0),
+              service,
               comment: commentIn.value || "",
             };
             try {
@@ -311,7 +395,7 @@ export async function renderFirewall(root) {
       el("div", { class: "toolbar" },
         addBtn,
         pill(t("firewall.count", { n: rules.length })),
-        pill(t("firewall.firewallEnabled", { enabled: enabled ? t("common.yes") : t("common.no") })),
+        pill(t(isSystemTool ? "firewall.atlasEnabledShort" : "firewall.firewallEnabled", { enabled: enabled ? t("common.yes") : t("common.no") })),
       ),
       table,
     );
@@ -320,6 +404,7 @@ export async function renderFirewall(root) {
   function render(st, rules) {
     body.replaceChildren(
       renderStatus(st),
+      renderExternalRules(rules),
       renderRules(st, rules),
     );
   }

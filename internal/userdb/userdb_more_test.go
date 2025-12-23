@@ -50,4 +50,3 @@ func TestUserCRUDAndPermissions(t *testing.T) {
 		t.Fatalf("expected empty after delete")
 	}
 }
-
