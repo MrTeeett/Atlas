@@ -27,6 +27,33 @@ function arrToCSV(a) {
   return (a || []).join(",");
 }
 
+function parseListen(addr) {
+  const raw = String(addr || "").trim();
+  if (!raw) return { host: "0.0.0.0", port: "" };
+  if (raw.startsWith("[")) {
+    const idx = raw.indexOf("]");
+    if (idx > 0) {
+      const host = raw.slice(1, idx);
+      const port = raw.slice(idx + 1).replace(/^:/, "");
+      return { host: host || "0.0.0.0", port };
+    }
+  }
+  const last = raw.lastIndexOf(":");
+  if (last > 0 && raw.indexOf(":") === last) {
+    return { host: raw.slice(0, last) || "0.0.0.0", port: raw.slice(last + 1) };
+  }
+  if (/^\d+$/.test(raw)) return { host: "0.0.0.0", port: raw };
+  return { host: raw, port: "" };
+}
+
+function buildListen(host, port) {
+  const h = String(host || "").trim() || "0.0.0.0";
+  const p = String(port || "").trim();
+  if (!p) return "";
+  const needsBrackets = h.includes(":") && !h.startsWith("[");
+  return `${needsBrackets ? `[${h}]` : h}:${p}`;
+}
+
 export async function renderAdmin(root) {
   if (!state.isAdmin) {
     root.append(el("div", { class: "card" }, el("div", { class: "path" }, t("common.forbidden"))));
@@ -51,6 +78,7 @@ export async function renderAdmin(root) {
 
   const pages = [
     { id: "server", titleKey: "admin.server" },
+    { id: "config", titleKey: "admin.config" },
     { id: "users", titleKey: "admin.users" },
     { id: "sudo", titleKey: "admin.sudo" },
     { id: "logs", titleKey: "admin.logs" },
@@ -80,9 +108,28 @@ export async function renderAdmin(root) {
   async function render() {
     replaceMain(el("div", { class: "path" }, t("common.loading")));
     if (page === "server") await renderServer();
+    else if (page === "config") await renderConfig();
     else if (page === "users") await renderUsers();
     else if (page === "sudo") await renderSudo();
     else await renderLogs();
+  }
+
+  function fieldRow(label, control, hint) {
+    return el("div", { class: "form-row" },
+      el("div", { class: "form-label" }, label),
+      el("div", { class: "form-control" }, control, hint ? el("div", { class: "form-hint" }, hint) : null),
+    );
+  }
+
+  function section(title, ...rows) {
+    return el("div", { class: "form-section" },
+      el("div", { class: "path" }, title),
+      el("div", { class: "form-grid" }, ...rows),
+    );
+  }
+
+  function checkControl(input) {
+    return el("label", { class: "form-check" }, input, el("span", {}, t("common.enabled")));
   }
 
   async function renderServer() {
@@ -173,33 +220,145 @@ export async function renderAdmin(root) {
         pill(`${t("admin.exec")}: ${cfg.config.enable_exec ? t("common.on") : t("common.off")}`),
         pill(`${t("admin.firewall")}: ${cfg.config.enable_firewall ? t("common.on") : t("common.off")}`),
         el("span", { class: "pm-spacer" }),
-        el("button", { class: "secondary", onclick: () => editConfig(cfg.config) }, t("admin.editJson")),
+        el("button", { class: "secondary", onclick: () => setPage("config") }, t("admin.openSettings")),
       ),
       el("div", { class: "path" }, t("admin.configRestartHint")),
     );
 
-    function editConfig(currentCfg) {
-      const ta = el("textarea", { class: "editor mono" }, JSON.stringify(currentCfg, null, 2));
-      const m = modal(t("admin.editConfigTitle"), [ta], [
-        el("button", { class: "secondary", onclick: () => m.close() }, t("common.cancel")),
-        el("button", {
-          onclick: async () => {
-            let next;
-            try { next = JSON.parse(ta.value || "{}"); } catch (e) { alert(t("admin.badJson")); return; }
-            await api("api/admin/config", {
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(next),
-            });
-            m.close();
-            await render();
-          },
-        }, t("common.save")),
-      ]);
-      ta.focus();
+    replaceMain(head, sys, actionsCard, cfgCard);
+  }
+
+  async function renderConfig() {
+    const cfg = await api("api/admin/config");
+    const currentCfg = cfg.config;
+    const listen = parseListen(currentCfg.listen);
+    const hostIn = el("input", { class: "mono", value: listen.host || "0.0.0.0" });
+    const portIn = el("input", { class: "mono", type: "number", min: "1", max: "65535", value: listen.port || "" });
+    const rootIn = el("input", { class: "mono", value: currentCfg.root || "/" });
+    const basePathIn = el("input", { class: "mono", value: currentCfg.base_path || "/" });
+    const tlsCertIn = el("input", { class: "mono", value: currentCfg.tls_cert_file || "" });
+    const tlsKeyIn = el("input", { class: "mono", value: currentCfg.tls_key_file || "" });
+
+    const cookieSecureIn = el("input", { type: "checkbox", checked: !!currentCfg.cookie_secure });
+    const execIn = el("input", { type: "checkbox", checked: !!currentCfg.enable_exec });
+    const fwIn = el("input", { type: "checkbox", checked: !!currentCfg.enable_firewall });
+    const adminActionsIn = el("input", { type: "checkbox", checked: !!currentCfg.enable_admin_actions });
+    const daemonizeIn = el("input", { type: "checkbox", checked: !!currentCfg.daemonize });
+    const logStdoutIn = el("input", { type: "checkbox", checked: !!currentCfg.log_stdout });
+    const fsSudoIn = el("input", { type: "checkbox", checked: !!currentCfg.fs_sudo });
+
+    const serviceNameIn = el("input", { class: "mono", value: currentCfg.service_name || "" });
+    const logFileIn = el("input", { class: "mono", value: currentCfg.log_file || "" });
+    const updateRepoIn = el("input", { class: "mono", value: currentCfg.update_repo || "" });
+    const fsUsersIn = el("input", { class: "mono", value: arrToCSV(currentCfg.fs_users || []) });
+    const masterKeyIn = el("input", { class: "mono", value: currentCfg.master_key_file || "" });
+    const userDBIn = el("input", { class: "mono", value: currentCfg.user_db_path || "" });
+    const fwDBIn = el("input", { class: "mono", value: currentCfg.firewall_db_path || "" });
+
+    const logLevelIn = el("select");
+    for (const v of ["debug", "info", "warn", "error", "off"]) {
+      logLevelIn.append(el("option", { value: v }, v));
+    }
+    logLevelIn.value = currentCfg.log_level || "info";
+
+    const updateChannelIn = el("select");
+    for (const v of ["auto", "stable", "dev"]) {
+      updateChannelIn.append(el("option", { value: v }, v));
+    }
+    updateChannelIn.value = currentCfg.update_channel || "auto";
+
+    const head = el("div", { class: "pm-head" },
+      el("div", { class: "pm-title" }, t("admin.titleConfig")),
+      pill(`${t("admin.configPath")}: ${cfg.config_path || "—"}`),
+      el("span", { class: "pm-spacer" }),
+      el("button", { class: "secondary", onclick: () => renderConfig() }, t("common.refresh")),
+      el("button", { onclick: () => saveConfig() }, t("common.save")),
+    );
+
+    const form = el("div", {},
+      section(t("admin.sectionNetwork"),
+        fieldRow(t("admin.labelListenHost"), hostIn, t("admin.listenHostHint")),
+        fieldRow(t("admin.labelListenPort"), portIn, t("admin.listenPortHint")),
+        fieldRow(t("admin.labelRoot"), rootIn),
+        fieldRow(t("admin.labelBasePath"), basePathIn, t("admin.basePathHint")),
+      ),
+      section(t("admin.sectionTLS"),
+        fieldRow(t("admin.labelTLSCert"), tlsCertIn),
+        fieldRow(t("admin.labelTLSKey"), tlsKeyIn),
+      ),
+      section(t("admin.sectionFeatures"),
+        fieldRow(t("admin.labelCookieSecure"), checkControl(cookieSecureIn)),
+        fieldRow(t("admin.labelEnableExec"), checkControl(execIn)),
+        fieldRow(t("admin.labelEnableFirewall"), checkControl(fwIn)),
+        fieldRow(t("admin.labelEnableAdminActions"), checkControl(adminActionsIn)),
+        fieldRow(t("admin.labelDaemonize"), checkControl(daemonizeIn)),
+      ),
+      section(t("admin.sectionLogging"),
+        fieldRow(t("admin.labelLogLevel"), logLevelIn),
+        fieldRow(t("admin.labelLogFile"), logFileIn),
+        fieldRow(t("admin.labelLogStdout"), checkControl(logStdoutIn)),
+      ),
+      section(t("admin.sectionUpdate"),
+        fieldRow(t("admin.labelUpdateRepo"), updateRepoIn),
+        fieldRow(t("admin.labelUpdateChannel"), updateChannelIn),
+      ),
+      section(t("admin.sectionFS"),
+        fieldRow(t("admin.labelFSSudo"), checkControl(fsSudoIn)),
+        fieldRow(t("admin.labelFSUsers"), fsUsersIn, t("admin.fsUsersHint")),
+      ),
+      section(t("admin.sectionPaths"),
+        fieldRow(t("admin.labelServiceName"), serviceNameIn),
+        fieldRow(t("admin.labelMasterKeyFile"), masterKeyIn),
+        fieldRow(t("admin.labelUserDBPath"), userDBIn),
+        fieldRow(t("admin.labelFWDBPath"), fwDBIn),
+      ),
+      el("div", { class: "path", style: "margin-top:12px;" }, t("admin.configRestartHint")),
+    );
+
+    async function saveConfig() {
+      const listenPort = String(portIn.value || "").trim();
+      if (!/^\d+$/.test(listenPort)) {
+        alert(t("admin.listenPortBad"));
+        return;
+      }
+      const portNum = Number(listenPort);
+      if (portNum <= 0 || portNum > 65535) {
+        alert(t("admin.listenPortBad"));
+        return;
+      }
+      const next = { ...currentCfg };
+      next.listen = buildListen(hostIn.value, listenPort);
+      next.root = String(rootIn.value || "").trim() || "/";
+      next.base_path = String(basePathIn.value || "").trim() || "/";
+      next.tls_cert_file = String(tlsCertIn.value || "").trim();
+      next.tls_key_file = String(tlsKeyIn.value || "").trim();
+      next.cookie_secure = !!cookieSecureIn.checked;
+      next.enable_exec = !!execIn.checked;
+      next.enable_firewall = !!fwIn.checked;
+      next.enable_admin_actions = !!adminActionsIn.checked;
+      next.service_name = String(serviceNameIn.value || "").trim();
+      next.daemonize = !!daemonizeIn.checked;
+      next.log_level = String(logLevelIn.value || "").trim();
+      next.log_file = String(logFileIn.value || "").trim();
+      next.log_stdout = !!logStdoutIn.checked;
+      next.update_repo = String(updateRepoIn.value || "").trim();
+      next.update_channel = String(updateChannelIn.value || "").trim();
+      next.fs_sudo = !!fsSudoIn.checked;
+      next.fs_users = csvToArr(fsUsersIn.value || "");
+      next.master_key_file = String(masterKeyIn.value || "").trim();
+      next.user_db_path = String(userDBIn.value || "").trim();
+      next.firewall_db_path = String(fwDBIn.value || "").trim();
+      await api("api/admin/config", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      await renderConfig();
     }
 
-    replaceMain(head, sys, actionsCard, cfgCard);
+    replaceMain(head, form);
+    hostIn.focus();
+    hostIn.select();
   }
 
   async function renderUsers() {

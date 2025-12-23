@@ -21,3 +21,13 @@ button.danger{background:var(--danger); border-color:#e04461;}
 .modal .card{width:min(980px, 94vw);}
 .modal .terminal{height:min(70vh, 560px);}
 .editor{width:100%; height:min(70vh, 560px); resize:vertical; padding:10px 12px; border-radius:12px; border:1px solid var(--terminal-border); background:var(--terminal-bg); color:var(--text); font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; font-size:13px; line-height:1.45;}
+.form-section{margin-top:14px;}
+.form-grid{display:grid; grid-template-columns:200px 1fr; gap:10px 12px; align-items:center;}
+.form-row{display:contents;}
+.form-label{color:var(--muted); font-size:12px;}
+.form-control{display:flex; flex-direction:column; gap:6px; min-width:0;}
+.form-hint{color:var(--muted2); font-size:11px;}
+@media (max-width: 720px){
+  .form-grid{grid-template-columns:1fr;}
+  .form-label{margin-top:6px;}
+}
