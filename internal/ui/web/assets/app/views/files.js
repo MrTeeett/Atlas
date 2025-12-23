@@ -11,10 +11,14 @@ export async function renderFiles(root) {
     back: [],
     forward: [],
     entries: [],
+    dirEntries: [],
     selected: new Set(),
     lastIndex: null,
     view: localStorage.getItem("atlas.fm.view") || "grid",
     search: "",
+    searching: false,
+    searchMode: false,
+    searchTruncated: false,
     addressEdit: false,
     ctx: null,
     modal: null,
@@ -49,6 +53,7 @@ export async function renderFiles(root) {
 
   const search = el("input", { class: "fm-search", placeholder: t("files.searchPlaceholder"), value: "" });
   const searchIcon = el("span", { class: "pill", title: t("files.searchTitle") }, svg(icons.search));
+  const searchSpinner = el("span", { class: "fm-search-spinner", title: t("files.searching") });
 
   const fsUserLabel = el("span", { class: "pill", title: t("files.fsContextTitle") }, "FS");
   const fsUserSelect = el("select", { title: t("files.fsUserSelectTitle") });
@@ -63,6 +68,7 @@ export async function renderFiles(root) {
     addressWrap,
     searchIcon,
     search,
+    searchSpinner,
     el("span", { class: "pill", title: t("files.atlasRootHint") }, "ATLAS_ROOT"),
     el("span", { style: "flex:1" }),
     fsUserLabel,
@@ -82,6 +88,9 @@ export async function renderFiles(root) {
   const status = el("div", { class: "fm-status" });
 
   main.append(toolbar, content, status);
+
+  let searchTimer = null;
+  let searchToken = 0;
 
   const places = [
     { titleKey: "files.placeHome", path: "/home" },
@@ -167,8 +176,16 @@ export async function renderFiles(root) {
 
   search.addEventListener("input", () => {
     fm.search = search.value || "";
-    renderContent();
-    updateStatus();
+    if (!fm.search.trim()) {
+      fm.searching = false;
+      fm.searchMode = false;
+      fm.searchTruncated = false;
+      fm.entries = fm.dirEntries || [];
+      renderContent();
+      updateStatus();
+      return;
+    }
+    scheduleSearch();
   });
 
   pathInput.addEventListener("keydown", async (e) => {
@@ -238,6 +255,7 @@ export async function renderFiles(root) {
   function currentEntries() {
     const q = (fm.search || "").toLowerCase();
     const base = fm.entries || [];
+    if (fm.searchMode) return base;
     if (!q) return base;
     return base.filter((e) => e.name.toLowerCase().includes(q));
   }
@@ -314,13 +332,18 @@ export async function renderFiles(root) {
     try {
       const data = await fsApi(`api/fs/list?path=${encodeURIComponent(path)}`);
       fm.path = normalizePath(data.path);
-      fm.entries = data.entries || [];
+      fm.dirEntries = data.entries || [];
+      fm.entries = fm.dirEntries;
       clearSelected();
       renderAddress();
       updatePlaces();
-      renderContent();
       updateNavButtons();
-      updateStatus();
+      if (fm.search && fm.search.trim()) {
+        await runSearch();
+      } else {
+        renderContent();
+        updateStatus();
+      }
     } catch (e) {
       showModal(t("common.error"), `${e.message}`);
     }
@@ -527,7 +550,13 @@ export async function renderFiles(root) {
           { class: "fm-item", tabindex: "0", "data-path": ent.path },
           entryIcon(ent, false),
           el("div", { class: "fm-name", title: ent.name }, ent.name),
-          el("div", { class: "fm-meta" }, ent.is_dir ? t("files.folder") : fmtBytes(ent.size)),
+          el(
+            "div",
+            { class: "fm-meta", title: fm.searchMode ? ent.path : "" },
+            fm.searchMode
+              ? `${ent.is_dir ? t("files.folder") : fmtBytes(ent.size)} · ${ent.path}`
+              : (ent.is_dir ? t("files.folder") : fmtBytes(ent.size)),
+          ),
         );
         item.addEventListener("click", (e) => onSelect(ent, i, e));
         item.addEventListener("dblclick", () => openEntry(ent));
@@ -563,7 +592,11 @@ export async function renderFiles(root) {
       const tr = el(
         "tr",
         { class: "fm-row", "data-path": ent.path },
-        el("td", {}, el("div", { class: "fm-namecell" }, entryIcon(ent, true), el("span", { class: "mono" }, ent.name))),
+        el("td", {}, (() => {
+          const nameCol = el("div", { class: "fm-namecol" }, el("span", { class: "mono" }, ent.name));
+          if (fm.searchMode) nameCol.append(el("div", { class: "fm-subpath mono", title: ent.path }, ent.path));
+          return el("div", { class: "fm-namecell" }, entryIcon(ent, true), nameCol);
+        })()),
         el("td", {}, ent.is_dir ? "—" : fmtBytes(ent.size)),
         el("td", {}, fmtDate(ent.mod_unix)),
       );
@@ -589,10 +622,14 @@ export async function renderFiles(root) {
     const selected = Array.from(fm.selected).map((p) => fm.entries.find((e) => e.path === p)).filter(Boolean);
     const selectedCount = selected.length;
     const selectedBytes = selected.reduce((sum, e) => sum + (e.is_dir ? 0 : Number(e.size) || 0), 0);
+    searchSpinner.classList.toggle("active", !!fm.searching);
     status.replaceChildren(
       el("span", {}, t("files.statusUser", { user: state.me || "—" })),
       el("span", {}, t("files.statusFs", { fs: fsUserDisplay() })),
       el("span", {}, t("files.statusItems", { n: entries.length })),
+      fm.searching ? el("span", {}, t("files.searching")) : " ",
+      fm.searchMode ? el("span", {}, t("files.searchResults", { q: fm.search })) : " ",
+      fm.searchTruncated ? el("span", {}, t("files.searchTruncated")) : " ",
       el("span", {}, selectedCount ? t("files.statusSelected", { n: selectedCount, size: fmtBytes(selectedBytes) }) : " "),
       el("span", { class: "mono" }, fm.path),
     );
@@ -717,11 +754,51 @@ export async function renderFiles(root) {
     }
   }
 
+  function scheduleSearch() {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      runSearch().catch(() => {});
+    }, 250);
+  }
+
+  async function runSearch() {
+    const q = (fm.search || "").trim();
+    if (!q) {
+      fm.searching = false;
+      fm.searchMode = false;
+      fm.searchTruncated = false;
+      fm.entries = fm.dirEntries || [];
+      renderContent();
+      updateStatus();
+      return;
+    }
+    const token = ++searchToken;
+    fm.searching = true;
+    updateStatus();
+    try {
+      const res = await fsApi(`api/fs/search?path=${encodeURIComponent(fm.path)}&q=${encodeURIComponent(q)}`);
+      if (token !== searchToken) return;
+      fm.searching = false;
+      fm.searchMode = true;
+      fm.searchTruncated = !!res.truncated;
+      fm.entries = res.entries || [];
+      clearSelected();
+      renderContent();
+      updateStatus();
+    } catch (e) {
+      if (token !== searchToken) return;
+      fm.searching = false;
+      updateStatus();
+      showModal(t("common.error"), `${e.message}`);
+    }
+  }
+
   document.addEventListener("click", closeContextMenu);
   window.addEventListener("keydown", onGlobalKeydown);
   root._cleanup = () => {
     document.removeEventListener("click", closeContextMenu);
     window.removeEventListener("keydown", onGlobalKeydown);
+    if (searchTimer) clearTimeout(searchTimer);
     closeContextMenu();
     closeModal();
   };

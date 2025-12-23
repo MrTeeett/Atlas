@@ -52,6 +52,13 @@ type listResponse struct {
 	Entries []Entry `json:"entries"`
 }
 
+type searchResponse struct {
+	Path      string  `json:"path"`
+	Query     string  `json:"query"`
+	Entries   []Entry `json:"entries"`
+	Truncated bool    `json:"truncated"`
+}
+
 type renameRequest struct {
 	From string `json:"from"`
 	To   string `json:"to"`
@@ -109,6 +116,40 @@ func (s *Service) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := s.listAs(r.Context(), as, clientPath)
+	if err != nil {
+		s.writeFSError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Service) HandleSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		http.Error(w, "q is required", http.StatusBadRequest)
+		return
+	}
+	clientPath := r.URL.Query().Get("path")
+	limit := 500
+	if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > 5000 {
+				n = 5000
+			}
+			limit = n
+		}
+	}
+	as, err := s.identityFromRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	resp, err := s.searchAs(r.Context(), as, clientPath, q, limit)
 	if err != nil {
 		s.writeFSError(w, err)
 		return
@@ -529,6 +570,67 @@ func (s *Service) list(absDir string) ([]Entry, error) {
 	})
 
 	return out, nil
+}
+
+func (s *Service) search(absRoot string, query string, limit int) ([]Entry, bool, error) {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return nil, false, errors.New("query is required")
+	}
+	info, err := os.Stat(absRoot)
+	if err != nil {
+		return nil, false, err
+	}
+	if !info.IsDir() {
+		name := filepath.Base(absRoot)
+		if strings.Contains(strings.ToLower(name), query) {
+			client := s.clientPath(absRoot)
+			return []Entry{{Name: name, Path: client, IsDir: false, Size: info.Size(), ModUnix: info.ModTime().Unix()}}, false, nil
+		}
+		return nil, false, nil
+	}
+
+	var out []Entry
+	truncated := false
+	limitErr := errors.New("search limit reached")
+
+	err = filepath.WalkDir(absRoot, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if path == absRoot {
+			return nil
+		}
+		name := d.Name()
+		if !strings.Contains(strings.ToLower(name), query) {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		p, err := s.ensureWithinRoot(path)
+		if err != nil {
+			return nil
+		}
+		client := s.clientPath(p)
+		out = append(out, Entry{
+			Name:    name,
+			Path:    client,
+			IsDir:   info.IsDir(),
+			Size:    info.Size(),
+			ModUnix: info.ModTime().Unix(),
+		})
+		if len(out) >= limit {
+			truncated = true
+			return limitErr
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, limitErr) {
+		return nil, false, err
+	}
+	return out, truncated, nil
 }
 
 func (s *Service) resolve(clientPath string) (string, error) {

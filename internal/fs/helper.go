@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // RunHelper is invoked as: `atlas fs-helper <op> [flags]`.
@@ -48,6 +49,44 @@ func RunHelper(args []string) int {
 			return 1
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(listResponse{Path: svc.clientPath(abs), Entries: entries})
+		return 0
+
+	case "search":
+		fs := flag.NewFlagSet("search", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		path := fs.String("path", "/", "path")
+		query := fs.String("q", "", "query")
+		limit := fs.Int("limit", 500, "limit")
+		if err := fs.Parse(rest); err != nil {
+			fmt.Fprintln(os.Stderr, "bad args")
+			return 2
+		}
+		if strings.TrimSpace(*query) == "" {
+			fmt.Fprintln(os.Stderr, "q is required")
+			return 2
+		}
+		if *limit <= 0 {
+			*limit = 500
+		}
+		if *limit > 5000 {
+			*limit = 5000
+		}
+		abs, err := svc.resolve(*path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			return 1
+		}
+		entries, truncated, err := svc.search(abs, *query, *limit)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			return 1
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(searchResponse{
+			Path:      svc.clientPath(abs),
+			Query:     strings.TrimSpace(*query),
+			Entries:   entries,
+			Truncated: truncated,
+		})
 		return 0
 
 	case "read":

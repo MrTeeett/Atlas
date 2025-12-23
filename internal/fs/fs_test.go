@@ -118,6 +118,39 @@ func TestHandleListIncludesParent(t *testing.T) {
 	}
 }
 
+func TestHandleSearchRecursive(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a", "b"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a", "b", "hello.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a", "c.log"), []byte("log"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := New(Config{RootDir: root})
+
+	req := httptest.NewRequest(http.MethodGet, "http://example/api/fs/search?path=/a&q=hello", nil)
+	rr := httptest.NewRecorder()
+	s.HandleSearch(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("search status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	var resp searchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if resp.Path != "/a" {
+		t.Fatalf("path=%q", resp.Path)
+	}
+	if len(resp.Entries) != 1 || resp.Entries[0].Path != "/a/b/hello.txt" {
+		t.Fatalf("unexpected entries: %#v", resp.Entries)
+	}
+}
+
 func TestHandleDownloadSelf(t *testing.T) {
 	t.Parallel()
 

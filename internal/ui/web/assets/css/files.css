@@ -16,6 +16,8 @@
 .fm-actions{display:flex; gap:8px; align-items:center;}
 .fm-actions input[type="file"]{display:none;}
 .fm-search{min-width:200px;}
+.fm-search-spinner{width:14px; height:14px; border-radius:50%; border:2px solid var(--border); border-top-color:var(--accent); opacity:0; transition:opacity .2s ease; animation:fmspin .8s linear infinite; animation-play-state:paused;}
+.fm-search-spinner.active{opacity:1; animation-play-state:running;}
 .fm-content{flex:1; margin-top:10px; border:1px solid var(--border); border-radius:14px; overflow:auto; background:var(--terminal-bg); position:relative;}
 .fm-drop{position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(79,124,255,.10); border:2px dashed rgba(79,124,255,.65); border-radius:14px;}
 .fm-drop.visible{display:flex;}
@@ -34,6 +36,13 @@
 .fm-row.selected td{background:rgba(79,124,255,.16);}
 .fm-row:hover td{background:var(--hover);}
 .fm-namecell{display:flex; align-items:center; gap:10px;}
+.fm-namecol{display:flex; flex-direction:column; min-width:0;}
+.fm-subpath{font-size:11px; color:var(--muted2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:52vw;}
+
+@keyframes fmspin{
+  from{transform:rotate(0deg);}
+  to{transform:rotate(360deg);}
+}
 .fm-smallico{width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center;}
 .fm-smallico svg{width:18px; height:18px;}
 .fm-status{margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--muted2); font-size:12px; padding:6px 8px;}

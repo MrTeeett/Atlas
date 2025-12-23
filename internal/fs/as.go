@@ -128,6 +128,37 @@ func (s *Service) listAs(ctx context.Context, as string, clientPath string) (lis
 	return resp, nil
 }
 
+func (s *Service) searchAs(ctx context.Context, as string, clientPath string, query string, limit int) (searchResponse, error) {
+	if as == "self" {
+		abs, err := s.resolve(clientPath)
+		if err != nil {
+			return searchResponse{}, err
+		}
+		entries, truncated, err := s.search(abs, query, limit)
+		if err != nil {
+			return searchResponse{}, err
+		}
+		return searchResponse{
+			Path:      s.clientPath(abs),
+			Query:     query,
+			Entries:   entries,
+			Truncated: truncated,
+		}, nil
+	}
+
+	var stdout bytes.Buffer
+	if err := s.runHelper(ctx, as, &stdout, nil, "search", "--path", clientPath, "--q", query, "--limit", strconv.Itoa(limit)); err != nil {
+		return searchResponse{}, err
+	}
+	var resp searchResponse
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		return searchResponse{}, err
+	}
+	resp.Path = normalizeClientPath(resp.Path)
+	resp.Query = query
+	return resp, nil
+}
+
 func (s *Service) readAs(ctx context.Context, as string, clientPath string, limit int64) ([]byte, error) {
 	if as == "self" {
 		abs, err := s.resolve(clientPath)

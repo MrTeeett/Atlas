@@ -125,6 +125,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/api/processes/signal", s.requireAPIAuth(s.requireProcs(s.requireCSRF(http.HandlerFunc(s.process.HandleSignal)))))
 
 	mux.Handle("/api/fs/list", s.requireAPIAuth(http.HandlerFunc(s.fs.HandleList)))
+	mux.Handle("/api/fs/search", s.requireAPIAuth(http.HandlerFunc(s.fs.HandleSearch)))
 	mux.Handle("/api/fs/read", s.requireAPIAuth(http.HandlerFunc(s.fs.HandleRead)))
 	mux.Handle("/api/fs/download", s.requireAPIAuth(http.HandlerFunc(s.fs.HandleDownload)))
 	mux.Handle("/api/fs/upload", s.requireAPIAuth(s.requireCSRF(http.HandlerFunc(s.fs.HandleUpload))))
