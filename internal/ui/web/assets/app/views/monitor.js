@@ -5,12 +5,26 @@ import { t } from "../i18n.js";
 import { state } from "../state.js";
 
 export async function renderMonitor(root, initialPage) {
+  const HISTORY_STORAGE_KEY = "atlas.monitor.history";
+  const HISTORY_WINDOW_KEY = "atlas.monitor.historyWindowMs";
+  const HISTORY_DEFAULT_MS = 10 * 60 * 1000;
+  const HISTORY_MAX_MS = 24 * 60 * 60 * 1000;
+  const historyRanges = [
+    { ms: 5 * 60 * 1000, labelKey: "monitor.historyRange5m" },
+    { ms: 15 * 60 * 1000, labelKey: "monitor.historyRange15m" },
+    { ms: 60 * 60 * 1000, labelKey: "monitor.historyRange1h" },
+    { ms: 6 * 60 * 60 * 1000, labelKey: "monitor.historyRange6h" },
+    { ms: 24 * 60 * 60 * 1000, labelKey: "monitor.historyRange24h" },
+  ];
+
   const mon = {
     page: initialPage || "overview",
     stats: null,
     info: null,
     hist: [],
-    maxPoints: 180, // ~6 minutes at 2s
+    historyWindowMs: HISTORY_DEFAULT_MS,
+    intervalMs: 2000,
+    maxPoints: 180,
     timerStats: null,
     timerProcs: null,
     procRows: [],
@@ -23,6 +37,7 @@ export async function renderMonitor(root, initialPage) {
     autostartLoading: false,
     autostartError: "",
     ctx: null,
+    lastSave: 0,
   };
 
   const nav = el("aside", { class: "sm-nav" });
@@ -230,6 +245,55 @@ export async function renderMonitor(root, initialPage) {
     return m * p;
   }
 
+  function clampHistoryWindow(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return HISTORY_DEFAULT_MS;
+    return Math.min(ms, HISTORY_MAX_MS);
+  }
+
+  function calcMaxPoints(ms) {
+    return Math.max(20, Math.ceil(ms / mon.intervalMs));
+  }
+
+  function setHistoryWindow(ms) {
+    mon.historyWindowMs = clampHistoryWindow(ms);
+    mon.maxPoints = calcMaxPoints(mon.historyWindowMs);
+    try {
+      localStorage.setItem(HISTORY_WINDOW_KEY, String(mon.historyWindowMs));
+    } catch {}
+    trimHistory();
+    saveHistoryCache(true);
+    if (mon.page === "history") renderPage();
+  }
+
+  function trimHistory() {
+    const cutoff = Date.now() - mon.historyWindowMs;
+    mon.hist = mon.hist.filter((p) => p && Number(p.t) >= cutoff);
+    if (mon.hist.length > mon.maxPoints) mon.hist.splice(0, mon.hist.length - mon.maxPoints);
+  }
+
+  function loadHistoryCache() {
+    try {
+      const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return [];
+      const out = arr.filter((p) => p && Number.isFinite(Number(p.t)));
+      out.sort((a, b) => Number(a.t) - Number(b.t));
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
+  function saveHistoryCache(force = false) {
+    const now = Date.now();
+    if (!force && now - mon.lastSave < 3000) return;
+    mon.lastSave = now;
+    try {
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(mon.hist));
+    } catch {}
+  }
+
   async function tickStats() {
     mon.stats = await api("api/stats");
     mon.info = await api("api/system/info");
@@ -240,7 +304,8 @@ export async function renderMonitor(root, initialPage) {
       rx: mon.stats.net_rx_bytes_s || 0,
       tx: mon.stats.net_tx_bytes_s || 0,
     });
-    if (mon.hist.length > mon.maxPoints) mon.hist.splice(0, mon.hist.length - mon.maxPoints);
+    trimHistory();
+    saveHistoryCache();
     if (mon.page === "overview" || mon.page === "history") renderPage();
   }
 
@@ -304,8 +369,21 @@ export async function renderMonitor(root, initialPage) {
   }
 
   function renderHistory() {
+    const rangeSelect = el("select", {
+      onchange: () => setHistoryWindow(Number(rangeSelect.value)),
+    });
+    for (const r of historyRanges) {
+      rangeSelect.append(el("option", { value: String(r.ms) }, t(r.labelKey)));
+    }
+    rangeSelect.value = String(mon.historyWindowMs);
+    const head = el("div", { class: "pm-head" },
+      el("div", { class: "pm-title" }, t("monitor.navHistory")),
+      el("span", { class: "pm-spacer" }),
+      el("span", { class: "pm-pill" }, t("monitor.historyWindow")),
+      rangeSelect,
+    );
     if (!mon.hist.length || !mon.stats) {
-      replaceMain(el("div", { class: "path" }, t("common.loading")));
+      replaceMain(head, el("div", { class: "path" }, t("common.loading")));
       return;
     }
     const h = mon.hist;
@@ -347,7 +425,7 @@ export async function renderMonitor(root, initialPage) {
       (ctx, dpr) => drawChart(ctx, dpr, [{ data: rx, color: "#20c997" }, { data: tx, color: "#ffb020" }], { x: xt, formatX: fmtX, minY: 0, maxY: netMax, formatY: (v) => fmtRate(v) }),
     );
 
-    replaceMain(cpuCard, memCard, netCard);
+    replaceMain(head, cpuCard, memCard, netCard);
     requestAnimationFrame(() => {
       cpuCard._resize?.();
       memCard._resize?.();
@@ -634,7 +712,7 @@ export async function renderMonitor(root, initialPage) {
       tickProcs(),
       mon.page === "autostart" ? tickAutostart(true) : Promise.resolve(),
     ]);
-    mon.timerStats = setInterval(() => tickStats().catch(() => {}), 2000);
+    mon.timerStats = setInterval(() => tickStats().catch(() => {}), mon.intervalMs);
     mon.timerProcs = setInterval(() => tickProcs().catch(() => {}), 2000);
   }
 
@@ -646,7 +724,15 @@ export async function renderMonitor(root, initialPage) {
     if (mon.timerProcs) clearInterval(mon.timerProcs);
   };
 
+  initHistory();
   await start();
+
+  function initHistory() {
+    mon.historyWindowMs = clampHistoryWindow(loadNumber(HISTORY_WINDOW_KEY, HISTORY_DEFAULT_MS));
+    mon.maxPoints = calcMaxPoints(mon.historyWindowMs);
+    mon.hist = loadHistoryCache();
+    trimHistory();
+  }
 }
 
 function kpi(label, value, sub) {
@@ -655,4 +741,15 @@ function kpi(label, value, sub) {
     el("div", { class: "value" }, value),
     el("div", { class: "sub" }, sub || " "),
   );
+}
+
+function loadNumber(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    const v = Number(raw);
+    return Number.isFinite(v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
 }
