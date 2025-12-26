@@ -6,6 +6,7 @@
   "enable_exec": true,
   "enable_firewall": true,
   "enable_admin_actions": true,
+  "log_level": "debug",
   "service_name": "atlas.service",
   "fs_sudo": true,
   "fs_users": [

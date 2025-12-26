@@ -144,8 +144,8 @@ func main() {
 			scheme = "https"
 			httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 		}
-		slog.Info("listening", "url", fmt.Sprintf("%s://%s%s", scheme, listenAddr, basePath))
-		slog.Info("login", "url", fmt.Sprintf("%s://%s%s/login", scheme, listenAddr, basePath))
+		logging.InfoOrDebug("listening", "url", fmt.Sprintf("%s://%s%s", scheme, listenAddr, basePath))
+		logging.InfoOrDebug("login", "url", fmt.Sprintf("%s://%s%s/login", scheme, listenAddr, basePath))
 		var err error
 		if tlsEnabled {
 			err = httpServer.ListenAndServeTLS(certFile, keyFile)

@@ -21,6 +21,7 @@ import (
 
 	"github.com/MrTeeett/atlas/internal/buildinfo"
 	"github.com/MrTeeett/atlas/internal/config"
+	"github.com/MrTeeett/atlas/internal/logging"
 )
 
 type updateStatus struct {
@@ -54,11 +55,13 @@ var (
 
 func (s *Server) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.ConfigPath == "" {
+		slog.Error("update: config path is not configured")
 		http.Error(w, "config path is not configured", http.StatusInternalServerError)
 		return
 	}
 	cfg, err := config.Load(s.cfg.ConfigPath)
 	if err != nil {
+		slog.Error("update: failed to load config", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -89,6 +92,7 @@ func (s *Server) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.cfg.EnableAdminActions {
+		slog.Warn("update: admin actions are disabled")
 		http.Error(w, "admin actions are disabled (enable_admin_actions=false)", http.StatusForbidden)
 		return
 	}
@@ -101,6 +105,7 @@ func (s *Server) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	resolved = resolveUpdateChannel(reqCh)
 	if resolved != "dev" && resolved != "stable" {
+		slog.Warn("update: bad channel", "channel", reqCh)
 		http.Error(w, "bad channel (use auto/stable/dev)", http.StatusBadRequest)
 		return
 	}
@@ -108,6 +113,7 @@ func (s *Server) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	updateMu.Lock()
 	if updateState.Running {
 		updateMu.Unlock()
+		slog.Warn("update: already running")
 		http.Error(w, "update already running", http.StatusConflict)
 		return
 	}
@@ -124,8 +130,10 @@ func (s *Server) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 			updateMu.Unlock()
 		}()
 
+		started := time.Now()
 		tag, err := resolveTargetTag(ctx, repo, resolved)
 		if err != nil {
+			slog.Error("update: resolve target tag", "err", err)
 			setUpdateErr(err)
 			return
 		}
@@ -133,16 +141,19 @@ func (s *Server) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		updateState.TargetTag = tag
 		updateMu.Unlock()
 
-		slog.Info("update: starting", "repo", repo, "channel", resolved, "tag", tag)
+		logging.InfoOrDebug("update: starting", "repo", repo, "channel", resolved, "tag", tag)
 		if err := s.applyUpdate(ctx, repo, tag); err != nil {
 			setUpdateErr(err)
 			slog.Error("update: failed", "err", err)
 			return
 		}
-		slog.Info("update: installed, restarting service")
-		_ = s.restartService(context.Background())
+		logging.InfoOrDebug("update: installed, restarting service", "elapsed", time.Since(started).String())
+		if err := s.restartService(context.Background()); err != nil {
+			slog.Warn("update: restart failed", "err", err)
+		}
 	}()
 
+	logging.InfoOrDebug("update: requested", "repo", repo, "channel", resolved)
 	writeJSON(w, adminActionResponse{Ok: true, Message: "update started; check Admin → Logs"})
 }
 
@@ -246,8 +257,10 @@ func (s *Server) applyUpdate(ctx context.Context, repo, tag string) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
+	slog.Debug("update: temp dir", "path", tmpDir)
 
 	sumsPath := filepath.Join(tmpDir, "SHA256SUMS.txt")
+	logging.InfoOrDebug("update: download checksums", "url", sumsURL)
 	if err := downloadToFile(ctx, sumsURL, sumsPath); err != nil {
 		return err
 	}
@@ -257,6 +270,7 @@ func (s *Server) applyUpdate(ctx context.Context, repo, tag string) error {
 	}
 
 	assetPath := filepath.Join(tmpDir, asset)
+	logging.InfoOrDebug("update: download asset", "url", assetURL)
 	got, err := downloadWithSHA256(ctx, assetURL, assetPath)
 	if err != nil {
 		return err
@@ -264,8 +278,10 @@ func (s *Server) applyUpdate(ctx context.Context, repo, tag string) error {
 	if !strings.EqualFold(want, got) {
 		return fmt.Errorf("checksum mismatch: want %s got %s", want, got)
 	}
+	slog.Debug("update: checksum ok", "asset", asset)
 
 	binPath := filepath.Join(tmpDir, "atlas.new")
+	logging.InfoOrDebug("update: extracting binary", "asset", asset)
 	if err := extractTarGzFile(assetPath, "atlas", binPath); err != nil {
 		return err
 	}
@@ -283,7 +299,10 @@ func (s *Server) applyUpdate(ctx context.Context, repo, tag string) error {
 	}
 
 	backup := exe + ".bak"
-	_ = s.runRoot(ctx, "cp", "-f", exe, backup)
+	if err := s.runRoot(ctx, "cp", "-f", exe, backup); err != nil {
+		slog.Warn("update: backup failed", "err", err, "path", backup)
+	}
+	slog.Debug("update: installing binary", "from", binPath, "to", exe)
 	if err := s.runRoot(ctx, "install", "-m", "0755", binPath, exe); err != nil {
 		return err
 	}
@@ -293,14 +312,19 @@ func (s *Server) applyUpdate(ctx context.Context, repo, tag string) error {
 func (s *Server) restartService(ctx context.Context) error {
 	name := strings.TrimSpace(s.cfg.ServiceName)
 	if name == "" {
+		slog.Debug("update: no service name configured; skip restart")
 		return nil
 	}
 	if !strings.HasSuffix(name, ".service") {
 		name += ".service"
 	}
 	// Best effort: do not fail update if restart isn't available.
-	_ = s.runRoot(ctx, "systemctl", "daemon-reload")
-	_ = s.runRoot(ctx, "systemctl", "restart", name)
+	if err := s.runRoot(ctx, "systemctl", "daemon-reload"); err != nil {
+		slog.Warn("update: systemctl daemon-reload failed", "err", err)
+	}
+	if err := s.runRoot(ctx, "systemctl", "restart", name); err != nil {
+		slog.Warn("update: systemctl restart failed", "err", err, "service", name)
+	}
 	return nil
 }
 

@@ -9,6 +9,7 @@ import (
 )
 
 func TestInitOffAllowsEmptyFile(t *testing.T) {
+	t.Setenv("DEBUG", "")
 	prev := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
@@ -22,6 +23,7 @@ func TestInitOffAllowsEmptyFile(t *testing.T) {
 }
 
 func TestInitWritesToFile(t *testing.T) {
+	t.Setenv("DEBUG", "")
 	prev := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
@@ -53,7 +55,22 @@ func TestInitWritesToFile(t *testing.T) {
 }
 
 func TestParseLevelInvalid(t *testing.T) {
+	t.Setenv("DEBUG", "")
 	if _, _, err := parseLevel("nope"); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestDebugEnabledTruthy(t *testing.T) {
+	t.Setenv("DEBUG", "1")
+	if !debugEnabled() {
+		t.Fatalf("expected debug enabled")
+	}
+}
+
+func TestDebugEnabledFalsey(t *testing.T) {
+	t.Setenv("DEBUG", "false")
+	if debugEnabled() {
+		t.Fatalf("expected debug disabled")
 	}
 }

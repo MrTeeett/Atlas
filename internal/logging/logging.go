@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -22,6 +23,13 @@ var (
 )
 
 func Init(cfg Config) (func() error, error) {
+	if debugEnabled() {
+		cfg.Stdout = true
+		if strings.TrimSpace(cfg.Level) == "" || strings.EqualFold(strings.TrimSpace(cfg.Level), "info") {
+			cfg.Level = "debug"
+		}
+	}
+
 	level, enabled, err := parseLevel(cfg.Level)
 	if err != nil {
 		return nil, err
@@ -72,6 +80,20 @@ func Init(cfg Config) (func() error, error) {
 	}, nil
 }
 
+func debugEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("DEBUG"))
+	if v == "" {
+		return false
+	}
+	v = strings.ToLower(v)
+	switch v {
+	case "0", "false", "off", "no":
+		return false
+	default:
+		return true
+	}
+}
+
 func parseLevel(s string) (lvl slog.Level, enabled bool, _ error) {
 	s = strings.TrimSpace(strings.ToLower(s))
 	switch s {
@@ -88,4 +110,13 @@ func parseLevel(s string) (lvl slog.Level, enabled bool, _ error) {
 	default:
 		return slog.LevelInfo, true, errors.New("bad log_level (use debug/info/warn/error/off)")
 	}
+}
+
+// InfoOrDebug logs as DEBUG when debug level is enabled, otherwise INFO.
+func InfoOrDebug(msg string, args ...any) {
+	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		slog.Debug(msg, args...)
+		return
+	}
+	slog.Info(msg, args...)
 }
