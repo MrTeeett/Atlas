@@ -124,7 +124,7 @@ export async function renderFirewall(root) {
       el("td", { class: "mono" }, descr),
       el("td", {}, r.comment || ""),
       el("td", { style: "text-align:right; white-space:nowrap;" },
-        hasService ? null : el("button", { class: "secondary", onclick: () => onPortLookup(r.type === "redirect" ? r.to_port : r.port_from, r.proto) }, t("firewall.whoUsesPort")),
+        hasService ? null : el("button", { class: "secondary", onclick: () => onPortLookup(r.type === "redirect" ? r.to_port : r.port_from) }, t("firewall.whoUsesPort")),
         hasService ? null : " ",
         el("button", { class: "secondary", onclick: onEdit }, t("common.edit")),
         " ",
@@ -327,22 +327,18 @@ export async function renderFirewall(root) {
       portsIn.focus();
     }
 
-    function openPortLookup(port, proto) {
+    function openPortLookup(port) {
       const portIn = el("input", { class: "mono", type: "number", min: "1", max: "65535", value: String(port || "") });
-      const protoSel = el("select");
-      for (const v of ["tcp", "udp", "any"]) protoSel.append(el("option", { value: v }, v));
-      protoSel.value = proto || "tcp";
       const out = el("div", { style: "margin-top:10px;" }, "");
       const m = modal(t("firewall.portUsageTitle"), [
         el("div", { class: "toolbar" },
           el("span", { class: "path" }, t("firewall.port")), portIn,
-          el("span", { class: "path" }, t("firewall.proto")), protoSel,
           el("button", {
             class: "secondary",
             onclick: async () => {
               out.replaceChildren(el("div", { class: "path" }, t("common.loading")));
               try {
-                const res = await api(`api/ports/usage?port=${encodeURIComponent(portIn.value)}&proto=${encodeURIComponent(protoSel.value)}`);
+                const res = await api(`api/ports/usage?port=${encodeURIComponent(portIn.value)}`);
                 if (res.error) {
                   out.replaceChildren(dangerText(res.error));
                   return;
@@ -386,7 +382,7 @@ export async function renderFirewall(root) {
         (v) => toggleRule(r, v).catch(e => alert(e.message || String(e))),
         () => openAddEdit(r),
         () => deleteRule(r).catch(e => alert(e.message || String(e))),
-        (p, proto) => openPortLookup(p, proto),
+        (p) => openPortLookup(p),
       ));
     }
 

@@ -343,7 +343,7 @@ OUT
 	s := NewFirewallService(FirewallConfig{Enabled: true})
 	s.ssPath = ssPath
 
-	req := httptest.NewRequest(http.MethodGet, "http://example/api/ports/usage?port=12345&proto=tcp", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://example/api/ports/usage?port=12345", nil)
 	rr := httptest.NewRecorder()
 	s.HandlePortUsage(rr, req)
 	if rr.Code != http.StatusOK {

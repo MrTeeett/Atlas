@@ -615,10 +615,9 @@ func (s *FirewallService) HandlePortUsage(w http.ResponseWriter, r *http.Request
 		return
 	}
 	proto := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("proto")))
-	if proto == "" {
-		proto = "tcp"
-	}
-	if proto != "tcp" && proto != "udp" && proto != "any" {
+	if proto == "" || proto == "tcp" || proto == "udp" || proto == "any" {
+		proto = "any"
+	} else {
 		http.Error(w, "bad proto", http.StatusBadRequest)
 		return
 	}
