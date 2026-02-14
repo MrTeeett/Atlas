@@ -402,7 +402,7 @@ write_config() {
   "listen": "${listen}",
   "root": "/",
   "base_path": "${base_path}",
-  "cookie_secure": false,
+  "cookie_secure": true,
   "enable_exec": true,
   "enable_firewall": true,
   "enable_admin_actions": true,
@@ -425,14 +425,10 @@ print_login() {
   local cfg="$1"
   local user="$2"
   local pass="$3"
-  local listen base_path tls_cert tls_key scheme url port host
+  local listen base_path scheme url port host
   listen="$(sed -n 's/.*"listen"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -n 1)"
   base_path="$(sed -n 's/.*"base_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -n 1)"
-  tls_cert="$(sed -n 's/.*"tls_cert_file"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -n 1)"
-  tls_key="$(sed -n 's/.*"tls_key_file"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" | head -n 1)"
-
-  scheme="http"
-  if [[ -n "${tls_cert}" && -n "${tls_key}" ]]; then scheme="https"; fi
+  scheme="https"
 
   port=""
   if [[ "${listen}" == *:* ]]; then port="${listen##*:}"; fi

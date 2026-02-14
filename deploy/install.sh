@@ -224,7 +224,7 @@ if [[ ! -f "${CFG_PATH}" ]]; then
   "listen": "127.0.0.1:${PORT}",
   "root": "/",
   "base_path": "${BASE_PATH}",
-  "cookie_secure": false,
+  "cookie_secure": true,
   "enable_exec": true,
   "enable_firewall": true,
   "enable_admin_actions": true,
@@ -252,13 +252,7 @@ fi
 
 listen="$(sed -n 's/.*"listen"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${CFG_PATH}" | head -n 1)"
 base_path="$(sed -n 's/.*"base_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${CFG_PATH}" | head -n 1)"
-tls_cert="$(sed -n 's/.*"tls_cert_file"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${CFG_PATH}" | head -n 1)"
-tls_key="$(sed -n 's/.*"tls_key_file"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${CFG_PATH}" | head -n 1)"
-
-scheme="http"
-if [[ -n "${tls_cert}" && -n "${tls_key}" ]]; then
-  scheme="https"
-fi
+scheme="https"
 
 port=""
 if [[ "${listen}" == *:* ]]; then

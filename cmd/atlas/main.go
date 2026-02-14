@@ -73,9 +73,11 @@ func main() {
 		return
 	}
 
-	certFile := resolveRelativeToConfigDir(configPath, fileCfg.TLSCertFile)
-	keyFile := resolveRelativeToConfigDir(configPath, fileCfg.TLSKeyFile)
-	tlsEnabled := strings.TrimSpace(certFile) != "" && strings.TrimSpace(keyFile) != ""
+	tlsInfo, err := ensureTLSBootstrap(configPath, listenAddr, &fileCfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tls bootstrap: %v\n", err)
+		os.Exit(1)
+	}
 
 	logFile := resolveRelativeToConfigDir(configPath, fileCfg.LogFile)
 	closeLogs, err := logging.Init(logging.Config{Level: fileCfg.LogLevel, File: logFile, Stdout: fileCfg.LogStdout})
@@ -110,7 +112,7 @@ func main() {
 		FSSudoEnabled:      fileCfg.FSSudo,
 		FSSudoAny:          len(fileCfg.FSUsers) == 1 && fileCfg.FSUsers[0] == "*",
 		FSSudoUsers:        fileCfg.FSUsers,
-		CookieSecure:       fileCfg.CookieSecure || tlsEnabled,
+		CookieSecure:       true,
 		EnableExec:         fileCfg.EnableExec,
 		EnableFW:           fileCfg.EnableFW,
 		FWDBPath:           fileCfg.FWDBPath,
@@ -139,19 +141,14 @@ func main() {
 			basePath = ""
 		}
 
-		scheme := "http"
-		if tlsEnabled {
-			scheme = "https"
-			httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-		}
+		scheme := "https"
+		httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 		logging.InfoOrDebug("listening", "url", fmt.Sprintf("%s://%s%s", scheme, listenAddr, basePath))
 		logging.InfoOrDebug("login", "url", fmt.Sprintf("%s://%s%s/login", scheme, listenAddr, basePath))
-		var err error
-		if tlsEnabled {
-			err = httpServer.ListenAndServeTLS(certFile, keyFile)
-		} else {
-			err = httpServer.ListenAndServe()
+		if tlsInfo.Generated {
+			slog.Warn("using auto-generated self-signed TLS certificate", "cert", tlsInfo.CertFile, "key", tlsInfo.KeyFile)
 		}
+		err := httpServer.ListenAndServeTLS(tlsInfo.CertFile, tlsInfo.KeyFile)
 		if err != nil && err != http.ErrServerClosed {
 			slog.Error("server", "err", err)
 			os.Exit(1)

@@ -170,26 +170,40 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	basePath := strings.TrimSpace(s.cfg.BasePath)
-	if basePath == "" || basePath == "/" {
-		return inner
-	}
-	if !strings.HasPrefix(basePath, "/") {
-		basePath = "/" + basePath
-	}
-	basePath = strings.TrimRight(basePath, "/")
+	withBasePath := inner
+	if basePath != "" && basePath != "/" {
+		if !strings.HasPrefix(basePath, "/") {
+			basePath = "/" + basePath
+		}
+		basePath = strings.TrimRight(basePath, "/")
 
-	// Serve everything under basePath; return 404 for root and other paths.
-	strip := http.StripPrefix(basePath, inner)
+		// Serve everything under basePath; return 404 for root and other paths.
+		strip := http.StripPrefix(basePath, inner)
+		withBasePath = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != basePath && !strings.HasPrefix(r.URL.Path, basePath+"/") {
+				http.NotFound(w, r)
+				return
+			}
+			if r.URL.Path == basePath {
+				http.Redirect(w, r, basePath+"/", http.StatusFound)
+				return
+			}
+			strip.ServeHTTP(w, r)
+		})
+	}
+
+	return s.securityHeaders(withBasePath)
+}
+
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != basePath && !strings.HasPrefix(r.URL.Path, basePath+"/") {
-			http.NotFound(w, r)
-			return
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		if r.TLS != nil {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
-		if r.URL.Path == basePath {
-			http.Redirect(w, r, basePath+"/", http.StatusFound)
-			return
-		}
-		strip.ServeHTTP(w, r)
+		next.ServeHTTP(w, r)
 	})
 }
 

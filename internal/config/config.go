@@ -74,7 +74,7 @@ func DefaultAllAllowed(configPath string) Config {
 		Listen:             fmt.Sprintf("127.0.0.1:%d", port),
 		Root:               "/",
 		BasePath:           "/" + hash,
-		CookieSecure:       false,
+		CookieSecure:       true,
 		EnableExec:         true,
 		EnableFW:           true,
 		EnableAdminActions: true,
@@ -160,6 +160,7 @@ func (c *Config) applyDefaults(configPath string) {
 	c.BasePath = normalizeBasePath(c.BasePath)
 	c.TLSCertFile = strings.TrimSpace(c.TLSCertFile)
 	c.TLSKeyFile = strings.TrimSpace(c.TLSKeyFile)
+	c.CookieSecure = true
 	if c.TLSCertFile != "" {
 		c.TLSCertFile = resolveRel(cfgDir, c.TLSCertFile)
 	}

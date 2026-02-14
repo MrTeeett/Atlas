@@ -123,7 +123,7 @@ If you need to recreate the config/keys/users DB in the install directory:
 ```
 
 Atlas prints the URL in logs on startup. You can also build the URL from `atlas.json`:
-`http://<host from listen><base_path>/login`.
+`https://<host from listen><base_path>/login`.
 
 Config: `atlas.json` (JSON).
 
@@ -177,6 +177,8 @@ ssh -L 8080:127.0.0.1:8080 user@server
 ## Security (important)
 
 - The release `install.sh` initializer binds to `0.0.0.0:<random-port>` by default so you can access it remotely. This is risky on an internet-facing server — prefer SSH tunnel or a reverse proxy with TLS + firewall/IP allowlist.
+- Atlas always serves UI/API over HTTPS. If `tls_cert_file`/`tls_key_file` are not configured, it auto-generates a self-signed certificate (`atlas.tls.crt` + `atlas.tls.key`) next to `atlas.json`.
+- For public access, replace the auto-generated certificate with a trusted one (for example via `Settings -> HTTPS`) to avoid browser certificate warnings.
 - `enable_exec: true` enables executing shell commands on the server from the browser — this is dangerous. If you enable it, use TLS, strong credentials, restrict the root, and preferably run under a dedicated low-privilege user.
 - Switching FS user in `Files` works via `sudo -n -u <user> atlas fs-helper ...` and requires a `sudoers` (NOPASSWD) rule for the Atlas binary; otherwise you'll get `403` instead of `500`.
   Example (service user `atlas`, binary `/opt/atlas/atlas`, allow only `sysdba`):
