@@ -57,6 +57,10 @@ func (s *ProcessService) HandleList(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(processListResponse{Processes: ps})
 }
 
+func (s *ProcessService) List() ([]Process, error) {
+	return s.list()
+}
+
 type signalRequest struct {
 	PID    int    `json:"pid"`
 	PIDs   []int  `json:"pids"`

@@ -60,6 +60,10 @@ func (s *StatsService) HandleStats(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(st)
 }
 
+func (s *StatsService) Collect() (Stats, error) {
+	return s.collect()
+}
+
 func (s *StatsService) collect() (Stats, error) {
 	now := time.Now()
 

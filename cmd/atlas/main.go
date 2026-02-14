@@ -128,10 +128,11 @@ func main() {
 		slog.Error("init app", "err", err)
 		os.Exit(1)
 	}
+	grpcServer := srv.GRPCServer()
 
 	httpServer := &http.Server{
 		Addr:              listenAddr,
-		Handler:           srv.Handler(),
+		Handler:           app.GRPCMux(srv.Handler(), grpcServer),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -161,6 +162,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	grpcServer.GracefulStop()
 	_ = httpServer.Shutdown(ctx)
 }
 

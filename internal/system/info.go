@@ -47,6 +47,10 @@ func (s *InfoService) HandleInfo(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(info)
 }
 
+func (s *InfoService) Collect() (SystemInfo, error) {
+	return collectSystemInfo()
+}
+
 func collectSystemInfo() (SystemInfo, error) {
 	host, _ := os.Hostname()
 	osName, _ := readOSRelease("/etc/os-release")

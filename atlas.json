@@ -1,18 +1,20 @@
 {
-  "listen": "127.0.0.1:8080",
-  "root": "/",
   "base_path": "/",
   "cookie_secure": true,
+  "enable_admin_actions": true,
   "enable_exec": true,
   "enable_firewall": true,
-  "enable_admin_actions": true,
-  "log_level": "debug",
-  "service_name": "atlas.service",
+  "firewall_db_path": "atlas.firewall.db",
   "fs_sudo": true,
   "fs_users": [
     "*"
   ],
+  "listen": "127.0.0.1:8080",
+  "log_level": "debug",
   "master_key_file": "atlas.master.key",
-  "user_db_path": "atlas.users.db",
-  "firewall_db_path": "atlas.firewall.db"
+  "root": "/",
+  "service_name": "atlas.service",
+  "tls_cert_file": "atlas.tls.crt",
+  "tls_key_file": "atlas.tls.key",
+  "user_db_path": "atlas.users.db"
 }

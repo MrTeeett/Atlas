@@ -4,3 +4,4 @@ atlas.master.key
 atlas.users.db
 atlas.firewall.db
 atlas.log
+atlas.tls.*
